@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ME &amp; MOMMY — סטטוס נתונים</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin:0; padding:24px 16px; background:#FFF9F3; color:#2E1B00;
+         font:16px/1.6 "Assistant","Varela Round",system-ui,sans-serif; }
+  main { max-width:720px; margin:0 auto; }
+  h1 { font-size:1.35rem; margin:0 0 4px; }
+  p.sub { margin:0 0 24px; color:#61493E; font-size:.9rem; }
+  .card { background:#fff; border:1px solid #F0DED2; border-radius:14px;
+          padding:16px 18px; margin-bottom:16px; }
+  table { width:100%; border-collapse:collapse; font-size:.92rem; }
+  th,td { text-align:right; padding:7px 4px; border-bottom:1px solid #F4E7DE; }
+  th { color:#61493E; font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  .n { font-variant-numeric:tabular-nums; }
+  .stale { color:#C0392B; }
+  .ok { color:#3B7A57; }
+  code { background:#F6EDE6; padding:1px 5px; border-radius:5px; font-size:.85em; }
+  .err { color:#C0392B; }
+</style>
+<main>
+  <h1>ME &amp; MOMMY — סטטוס נתוני רשימת הלידה</h1>
+  <p class="sub">עמוד שירות פנימי. מציג מה יש בקובץ הנתונים ומתי כל חנות נסרקה.</p>
+
+  <div class="card" id="summary">טוען…</div>
+  <div class="card" id="stores"></div>
+
+  <div class="card">
+    <strong>הכתובות</strong>
+    <p style="margin:8px 0 0">
+      <code>bl_version.json</code> — תמיד בלי מטמון<br>
+      <code>bl_data.json?v=&lt;מספר הגרסה&gt;</code> — נטען לפי הגרסה
+    </p>
+  </div>
+</main>
+<script>
+(function () {
+  var BASE = './';
+  var summary = document.getElementById('summary');
+  var stores  = document.getElementById('stores');
+
+  function pad(n){ return (n<10?'0':'')+n; }
+  function fmt(iso){
+    if (!iso) return '—';
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear()+
+           ' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  function daysAgo(iso){
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d)) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+  }
+
+  fetch(BASE + 'bl_version.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('bl_version.json: ' + r.status);
+      return r.json();
+    })
+    .then(function (v) {
+      var c = v.counts || {};
+      summary.innerHTML =
+        '<strong>גרסה ' + v.v + '</strong> · נבנה ' + fmt(v.built) +
+        '<table>' +
+        '<tr><th>דגמים בקובץ</th><td class="n">' + (c.models || 0) + '</td></tr>' +
+        '<tr><th>הצעות מחיר</th><td class="n">' + (c.offers || 0) + '</td></tr>' +
+        '<tr><th>דגמים ביותר מחנות אחת</th><td class="n">' + (c.multiStore || 0) + '</td></tr>' +
+        '<tr><th>דגמים עם תמונה</th><td class="n">' + (c.withImage || 0) + '</td></tr>' +
+        '<tr><th>ממתינים לאישור (לא מוצגים)</th><td class="n">' + (c.review || 0) + '</td></tr>' +
+        '<tr><th>גודל הקובץ</th><td class="n">' +
+            (v.data && v.data.bytes ? Math.round(v.data.bytes / 1024) + ' KB' : '—') + '</td></tr>' +
+        '</table>';
+
+      var src = v.sources || {}, rows = '';
+      Object.keys(src).forEach(function (id) {
+        var s = src[id], d = daysAgo(s.scanned);
+        var cls = d === null ? '' : (d > 7 ? 'stale' : 'ok');
+        var age = d === null ? '' : (d === 0 ? 'היום' : 'לפני ' + d + ' ימים');
+        rows += '<tr><th>' + id + '</th>' +
+                '<td class="n">' + (s.products || '—') + ' מוצרים</td>' +
+                '<td class="' + cls + '">' + fmt(s.scanned) + ' ' + age + '</td></tr>';
+      });
+      stores.innerHTML = '<strong>מתי כל חנות נסרקה</strong><table>' + rows + '</table>';
+    })
+    .catch(function (e) {
+      summary.innerHTML = '<span class="err">לא הצלחתי לטעון את קובץ הגרסה — ' + e.message + '</span>';
+    });
+})();
+</script>
+</html>
