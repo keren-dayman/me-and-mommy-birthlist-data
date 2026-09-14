@@ -288,7 +288,7 @@ function lines(){
     for (const p of picks) {
       const m = modelById[p.m]; const o = m && m.offers.find(x => x.sid === p.s);
       if (!m || !o) { out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:p.name || it.n, store:p.sname || '', price:0, qty:p.q || 1, who:p.who || 'me', missing:true, model:null}); continue; }
-      out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:m.n, brand:m.brand, store:STORES[o.sid].n, sid:o.sid, price:o.p, px:o.px, qty:p.q || 1, who:p.who || 'me', model:m, offer:o, url:o.u, img:m.img});
+      out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:m.n, brand:m.brand, store:STORES[o.sid].n, sid:o.sid, price:(p.pp != null ? +p.pp : o.p), storeP:o.p, personal:p.pp != null, px:o.px, qty:p.q || 1, who:p.who || 'me', model:m, offer:o, url:o.u, img:m.img});
     }
   }
   for (const c of S.custom) { const it = c.i ? itemById[c.i] : null; if (it && S.have[it.id]) continue; out.push({key:'c' + c.id, custom:c, itemId:c.i || null, item:it, cat:it ? it.c : c.c, name:c.name, store:c.store || 'חנות אחרת', price:+c.price || 0, qty:c.q || 1, who:c.who || 'me', url:c.url, model:null}); }
@@ -332,7 +332,7 @@ function renderList(){
     const done = its.filter(handled).length;
     const open = expandAll || (S.open != null ? S.open === cat : idx === 0);
     return `<div class="cat" data-cat="${esc(cat)}" ${open?'open':''}><button type="button" class="hd" aria-expanded="${open}"><header><span class="ico" style="background:var(--surface-2)">${CAT_EMOJI[cat] || '🍼'}</span><span class="t"><h2>${esc(cat)}</h2><span class="prog num">${done === its.length ? '✓ הכול טופל' : `${done} מתוך ${its.length} טופלו`}</span></span><svg class="chev"><use href="#i-chev"/></svg></header></button>
-      <div class="bar"><i style="width:${Math.round(done/its.length*100)}%"></i></div><div class="items">${shown.map(renderItem).join('')}${extra.map(renderCustomItem).join('')}<div class="catfoot"><button type="button" class="btn small soft" data-addcat="${esc(cat)}">${ic('i-plus')} מוצר משלי לקטגוריה הזו</button></div></div></div>`;
+      <div class="bar"><i style="width:${Math.round(done/its.length*100)}%"></i></div><div class="items">${shown.map(renderItem).join('')}${extra.map(renderCustomItem).join('')}</div></div>`;
   }).join('');
   $$('#cats .cat .hd').forEach(b => b.onclick = () => {
     const c = b.closest('.cat'), wasOpen = c.hasAttribute('open');
@@ -341,7 +341,6 @@ function renderList(){
     else { c.removeAttribute('open'); b.setAttribute('aria-expanded','false'); S.open = ''; }
     save();
   });
-  $$('#cats [data-addcat]').forEach(b => b.onclick = () => openManual(null, b.dataset.addcat));
   bindList();
 }
 // תמונה: אייקון ברירת-מחדל תמיד מאחור; תמונה שנשברת נעלמת ומשאירה אותו
@@ -358,13 +357,14 @@ function whoRow(key, who){ return `<div class="who" role="group" aria-label="מ�
 function renderPick(it, p){
   const m = modelById[p.m], o = m && m.offers.find(x => x.sid === p.s), q = p.q || 1, key = 'p' + p.id;
   if (!m || !o) return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(p.name || 'המוצר שנבחר')}</b><span class="v">המוצר הזה כבר לא זמין בחנויות שאנחנו בודקים</span></span></div><div class="row"><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div></div>`;
-  return `<div class="pick" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}</span></span><span class="price num">${q > 1 ? nis(o.p * q) : priceLabel(o)}</span></div>
-    <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות ↗</a><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
+  const my = p.pp != null, unit = my ? +p.pp : o.p;
+  return `<div class="pick" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}${my ? ` · <b style="color:var(--sage)">המחיר שלי</b> · בחנות: ${nis(o.p)}` : ''}</span></span><span class="price num">${q > 1 ? nis(unit * q) : (my ? nis(unit) : priceLabel(o))}<button type="button" class="pedit" data-act="price" data-key="${key}" title="יש לי הנחה — לעדכן מחיר" aria-label="עריכת מחיר">✎</button></span></div>
+    <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות ↗</a><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
     ${whoRow(key, p.who || 'me')}</div>`;
 }
 function renderCustomPick(c){
   const key = 'c' + c.id, q = c.q || 1;
-  return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span></span><span class="price num">${nis((+c.price || 0) * q)}</span></div>
+  return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span></span><span class="price num">${nis((+c.price || 0) * q)}<button type="button" class="pedit" data-act="price" data-key="${key}" title="עריכת מחיר" aria-label="עריכת מחיר">✎</button></span></div>
     <div class="row"><span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות ↗</a>` : ''}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
     ${whoRow(key, c.who || 'me')}</div>`;
 }
@@ -376,7 +376,7 @@ function renderItem(it){
   else {
     body = picks.map(p => renderPick(it, p)).join('') + customs.map(renderCustomPick).join('');
     const has = picks.length || customs.length;
-    body += `<div class="acts">${models.length ? `<button type="button" class="btn ${has ? 'soft' : 'primary'} small" data-act="models">${has ? ic('i-plus') + ' מוצר נוסף' : (models.length === 1 ? 'לראות את המוצר' : `בחירת מוצר <span class="num" style="opacity:.8">(${models.length})</span>`)}</button>` : ''}<button type="button" class="btn ghost small" data-act="manual">מוצר משלי</button>${!has ? `<button type="button" class="btn soft small" data-act="have">כבר יש לי</button>` : ''}</div>`;
+    body += `<div class="acts">${models.length ? `<button type="button" class="btn ${has ? 'soft' : 'primary'} small" data-act="models">${has ? ic('i-plus') + ' מוצר נוסף' : (models.length === 1 ? 'לראות את המוצר' : `בחירת מוצר <span class="num" style="opacity:.8">(${models.length})</span>`)}</button>` : `<button type="button" class="btn ghost small" data-act="manual">מוצר משלי</button>`}${!has ? `<button type="button" class="btn soft small" data-act="have">כבר יש לי</button>` : ''}</div>`;
     if (!has) {
       if (!models.length) body += `<div class="nomodels">אין כרגע מחיר עדכני לפריט הזה — אפשר להוסיף מוצר משלכם.</div>`;
       else if (models.length === 1 && models[0].nStores === 1) body += `<div class="nomodels">מוצר אחד, בחנות אחת — בלי השוואת מחיר.</div>`;
@@ -401,6 +401,7 @@ function bindList(){
     else if (act === 'undo') { delete S.have[id]; save(); rerenderItem(id); toast('חזר לרשימה'); }
     else if (act === 'models') { const ms = modelsByItem[id] || []; if (ms.length === 1) openModel(ms[0].id); else openModels(id); }
     else if (act === 'manual') openManual(id);
+    else if (act === 'price') openPriceEdit(key, id);
     else if (act === 'remove') { const f = findByKey(key); if (f.custom) S.custom = S.custom.filter(c => c !== f.custom); else if (f.pick) { S.sel[f.iid] = f.picks.filter(p => p !== f.pick); if (!S.sel[f.iid].length) delete S.sel[f.iid]; } save(); id != null ? rerenderItem(id) : renderList(); toast('הוסר מהרשימה'); }
     else if (act === 'qty') { const f = findByKey(key), t = f.custom || f.pick; if (!t) return; t.q = Math.max(1, (t.q||1) + +b.dataset.d); save(); id != null ? rerenderItem(id) : renderList(); }
   });
@@ -482,23 +483,49 @@ function openModel(mid){
   });
 }
 
+/* ---------- מחיר אישי — הנחת מועדון/קופון, נשמר רק ברשימה של המשתמש/ת ---------- */
+function openPriceEdit(key, itemId){
+  const f = findByKey(key), t = f.custom || f.pick; if (!t) return;
+  const isPick = !!f.pick; let storeP = null;
+  if (isPick) { const m = modelById[t.m], o = m && m.offers.find(x => x.sid === t.s); storeP = o ? o.p : null; }
+  const cur = isPick ? (t.pp != null ? t.pp : storeP) : (+t.price || 0);
+  openModal(`<h2>המחיר שלי</h2><p>יש לכם הנחת מועדון או קופון? רשמו את המחיר שתשלמו בפועל — הוא ייכנס לסיכום ולפריסה החודשית. נשמר רק ברשימה שלכם.${storeP != null ? ` המחיר בחנות: <b class="num">${nis(storeP)}</b>.` : ''}</p>
+    <div class="field"><label for="ppVal">מחיר ליחידה (₪)</label><input id="ppVal" type="number" min="0" step="0.1" inputmode="decimal" value="${cur ?? ''}"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">${isPick && t.pp != null ? `<button type="button" class="btn ghost small" id="ppReset" style="margin-inline-end:auto;color:var(--rose)">חזרה למחיר החנות</button>` : ''}<button type="button" class="btn soft" id="ppCancel">ביטול</button><button type="button" class="btn primary" id="ppSave">שמירה</button></div>`);
+  const done = msg => { save(); closeModal(); itemId != null ? rerenderItem(itemId) : renderList(); toast(msg); };
+  $('#ppCancel').onclick = closeModal;
+  const rst = $('#ppReset'); if (rst) rst.onclick = () => { delete t.pp; done('חזר למחיר החנות'); };
+  $('#ppSave').onclick = () => {
+    const v = parseFloat($('#ppVal').value); if (isNaN(v) || v < 0) { $('#ppVal').focus(); return; }
+    if (isPick) { if (storeP != null && Math.abs(v - storeP) < 0.005) delete t.pp; else t.pp = v; } else t.price = v;
+    done('המחיר עודכן ✓');
+  };
+}
+
 /* ---------- מוצר משלי (הוספה ידנית) ---------- */
 function openManual(itemId, cat){
   const it = itemId ? itemById[itemId] : null;
   openModal(`<h2>${it ? esc(it.n) : 'מוצר משלי'}</h2><p>${it ? 'מוצר מחנות שהכלי לא בודק, או שלא מופיע ברשימה.' : 'מוצר שלא ברשימה, מכל חנות — כדי שהכול יהיה במקום אחד.'}</p>
-    ${it ? '' : `<div class="field"><label for="mfName">שם המוצר</label><input id="mfName" required></div><div class="field"><label for="mfCat">קטגוריה</label><select id="mfCat">${CATS.map(c => `<option ${c===cat?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`}
+    ${it ? '' : `<div class="field"><label for="mfCat">קטגוריה</label><select id="mfCat">${CATS.map(c => `<option ${c===cat?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div class="field"><label for="mfItem">לאיזה פריט זה שייך?</label><select id="mfItem"></select></div><div class="field" id="mfNameWrap"><label for="mfName">שם המוצר</label><input id="mfName" required></div>`}
     <div class="field"><label for="mfStore">חנות או אתר</label><input id="mfStore" placeholder="למשל: עלי אקספרס, חנות בקניון…"></div>
     <div class="field two"><div class="field"><label for="mfPrice">מחיר (₪)</label><input id="mfPrice" type="number" min="0" step="0.1" inputmode="decimal"></div><div class="field"><label for="mfQty">כמות</label><input id="mfQty" type="number" min="1" value="${it ? defaultQty(it) : 1}" inputmode="numeric"></div></div>
     <div class="field"><label for="mfUrl">קישור (לא חובה)</label><input id="mfUrl" type="url" dir="ltr" placeholder="https://"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>`);
+  if (!it) {
+    const fillItems = () => { const c = $('#mfCat').value; $('#mfItem').innerHTML = `<option value="">פריט חדש — לא מהרשימה</option>` + ITEMS.filter(i => i.c === c).map(i => `<option value="${i.id}">${esc(i.n)}</option>`).join(''); $('#mfNameWrap').hidden = false; };
+    fillItems();
+    $('#mfCat').onchange = fillItems;
+    $('#mfItem').onchange = () => { $('#mfNameWrap').hidden = !!$('#mfItem').value; };
+  }
   $('#mfCancel').onclick = closeModal;
   $('#mfSave').onclick = () => {
     const price = parseFloat($('#mfPrice').value); if (isNaN(price)) { $('#mfPrice').focus(); return toast('צריך מחיר כדי שהמוצר ייכנס לסיכום'); }
     const q = Math.max(1, parseInt($('#mfQty').value) || 1), store = $('#mfStore').value.trim(), url = $('#mfUrl').value.trim();
-    let name = it ? it.n : $('#mfName').value.trim(); if (!name) { $('#mfName').focus(); return toast('מה שם המוצר?'); }
-    S.custom.push({ id: uid(), i: it ? it.id : null, c: it ? it.c : $('#mfCat').value, name, store, price, url, q, who:'me' });
-    if (it) delete S.have[it.id];
-    save(); closeModal(); it ? rerenderItem(it.id) : (S.open = $('#mfCat') ? $('#mfCat').value : S.open, renderList()); toast('נוסף לרשימה ✓');
+    const linked = it || (($('#mfItem') && $('#mfItem').value) ? itemById[+$('#mfItem').value] : null);
+    let name = linked ? linked.n : $('#mfName').value.trim(); if (!name) { $('#mfName').focus(); return toast('מה שם המוצר?'); }
+    S.custom.push({ id: uid(), i: linked ? linked.id : null, c: linked ? linked.c : $('#mfCat').value, name, store, price, url, q, who:'me' });
+    if (linked) delete S.have[linked.id];
+    save(); closeModal(); (linked && !$('#mfCat')) ? rerenderItem(linked.id) : (S.open = linked ? linked.c : ($('#mfCat') ? $('#mfCat').value : S.open), renderList()); toast('נוסף לרשימה ✓');
   };
 }
 
@@ -601,6 +628,9 @@ async function boot(){
   if (draft?.profile) { S = normalize(draft); renderSignIn(); return; }
   S = EMPTY(); OB.step = 0; renderOnboard();
 }
+/* פס ה"תצוגה מקדימה" של שופיפיי יושב על הבר התחתון — מרימים את הרכיבים הקבועים מעליו */
+function liftAboveShopifyBar(){ const pb = document.getElementById('PBarNextFrameWrapper') || document.getElementById('preview-bar-iframe') || document.querySelector('.shopify-preview-bar'); document.body.style.setProperty('--bl-pb', (pb ? Math.ceil(pb.getBoundingClientRect().height) : 0) + 'px'); }
+liftAboveShopifyBar(); setTimeout(liftAboveShopifyBar, 1500); setTimeout(liftAboveShopifyBar, 4000); addEventListener('resize', liftAboveShopifyBar);
 $('#btnRetry').onclick = boot;
 boot();
 })();
