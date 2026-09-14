@@ -66,40 +66,79 @@ const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/
 
 /* =====================================================================
    מתג הזהות — "מי מחובר/ת" + שמירה/טעינה של הרשימה.
-   בשלב E: הדמיה (localStorage). בשלב G מחליפים את המודול הזה בלבד:
-   signIn → מעבר לדף ההתחברות של Shopify, loadList/saveList → App Proxy.
+   שלב G: אמיתי. מזוהים לפי חשבון הלקוחה של שופיפיי (Google/Shop/מייל+קוד).
+   loadList/saveList/whoami עוברים דרך ה-App Proxy (memommyclub.com/apps/birthlist/*),
+   שמזהה את הלקוחה מהחתימה של שופיפיי בלבד — לא לפי שום דבר שהדפדפן שולח.
    הממשק לא יודע ולא צריך לדעת מה מאחורי הפונקציות האלה.
    ===================================================================== */
+// כל בקשה לכתובת הזו מועברת (חתומה) לווקר של שלב G — קבוע טכני, לא בהגדרות.
+const APP_PROXY_BASE = '/apps/birthlist/';
 const Identity = (() => {
-  const KEY_USER = 'bl_user', KEY_DRAFT = 'bl_draft', listKey = uid => 'bl_list_' + uid;
+  const KEY_DRAFT = 'bl_draft';
+  const AUTH_MARK = 'blauth';   // סימון שאנחנו שמים בכתובת החזרה, כדי לזהות "רגע אחרי התחברות"
+  let cachedUser; // undefined = עוד לא נבדק בטעינה הזו
+
+  async function whoami(){
+    try {
+      const r = await fetch(APP_PROXY_BASE + 'whoami', {credentials:'same-origin', cache:'no-store'});
+      const d = await r.json();
+      return (d && d.ok && d.logged_in) ? {id:'shopify'} : null;
+    } catch(e) { return null; }
+  }
+
   return {
-    mode: 'mock',
-    current(){ return ls.get(KEY_USER); },
-    // יציאה להרשמה. draft = כל מה שמולא עד עכשיו — חייב לשרוד את היציאה מהעמוד.
-    // נשמר בשני מקומות: באחסון המקומי, וגם בכתובת החזרה (למקרה שהאחסון נמחק).
+    mode: 'live',
+    async current(){
+      if (cachedUser === undefined) cachedUser = await whoami();
+      return cachedUser;
+    },
+    // יציאה להרשמה/התחברות של שופיפיי. draft = כל מה שמולא עד עכשיו — חייב לשרוד את היציאה מהעמוד.
+    // נשמר בשני מקומות: באחסון המקומי, וגם מקודד בכתובת שאליה שופיפיי תחזיר אותנו.
     signIn(provider, draft){
       ls.set(KEY_DRAFT, draft);
-      const u = new URL(location.href);
-      u.searchParams.set('auth', provider);       // בדמו: חוזרים לאותו עמוד עם סימון
-      u.hash = 'd=' + b64e(JSON.stringify(draft));
-      location.href = u.toString();
+      const back = new URL(location.href);
+      back.searchParams.set(AUTH_MARK, '1');
+      back.hash = 'd=' + b64e(JSON.stringify(draft));
+      const login = new URL('/account/login', CONFIG.STORE_HOME);
+      login.searchParams.set('return_url', back.pathname + back.search + back.hash);
+      location.href = login.toString();
     },
-    // נקרא בכל טעינה: אם חזרנו מהרשמה — יוצר את המשתמש/ת ומחזיר את הטיוטה ששרדה
+    // נקרא בכל טעינה: אם חזרנו מהתחברות (יש סימון בכתובת) — מחזיר את הטיוטה ששרדה.
+    // לא קובע לבד אם ההתחברות הצליחה — את זה בודקים בנפרד עם current().
     completeSignIn(){
-      const u = new URL(location.href), p = u.searchParams.get('auth');
-      if (!p) return null;
+      const u = new URL(location.href);
+      if (!u.searchParams.get(AUTH_MARK)) return null;
       let draft = null;
       const m = /(?:^|[#&])d=([^&]+)/.exec(u.hash);
       if (m) { try { draft = JSON.parse(b64d(m[1])); } catch(e) {} }
       draft = draft || ls.get(KEY_DRAFT); ls.del(KEY_DRAFT);
-      const user = {id:'mock-' + p, provider:p, name:''};
-      ls.set(KEY_USER, user);
-      try { history.replaceState(null, '', u.pathname + u.search.replace(/[?&]auth=[^&]*/,'').replace(/^&/,'?')); } catch(e) {}
-      return {user, draft};
+      try {
+        const clean = new URL(u.pathname + u.search, location.origin);
+        clean.searchParams.delete(AUTH_MARK);
+        history.replaceState(null, '', clean.pathname + clean.search);
+      } catch(e) {}
+      return {draft};
     },
-    signOut(){ ls.del(KEY_USER); ls.del(KEY_DRAFT); },
-    async loadList(uid){ return ls.get(listKey(uid)); },
-    async saveList(uid, list){ ls.set(listKey(uid), list); },
+    signOut(){
+      const back = new URL(location.pathname, CONFIG.STORE_HOME);
+      const logout = new URL('/account/logout', CONFIG.STORE_HOME);
+      logout.searchParams.set('return_url', back.pathname);
+      location.href = logout.toString();
+    },
+    async loadList(){
+      const r = await fetch(APP_PROXY_BASE + 'list', {credentials:'same-origin'});
+      const d = await r.json();
+      return (d && d.ok) ? d.list : null;
+    },
+    async saveList(_uid, list){
+      try {
+        await fetch(APP_PROXY_BASE + 'list', {
+          method:'POST', credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body: JSON.stringify(list),
+        });
+      } catch(e) {}
+    },
   };
 })();
 
@@ -242,7 +281,6 @@ function renderBuild(){
 /* ---------- 3. הרשמה (אין מצב אורח/ת) ---------- */
 const PROVIDERS = [
   {id:'google', cls:'google', label:'להמשיך עם Google', svg:`<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.7-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.2v3.1C3.2 21.3 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.3 14.3c-.5-1.5-.5-3.1 0-4.6V6.6H1.2c-1.6 3.3-1.6 7.2 0 10.5l4.1-2.8z"/><path fill="#EA4335" d="M12 4.7c1.7 0 3.3.6 4.5 1.8l3.4-3.4C17.9 1.2 15.1 0 12 0 7.3 0 3.2 2.7 1.2 6.6l4.1 3.1c.9-2.9 3.6-5 6.7-5z"/></svg>`},
-  {id:'apple', cls:'apple', label:'להמשיך עם Apple', svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.9-1.7 0-3.2 1-4.1 2.5-1.8 3-.5 7.5 1.3 10 .9 1.2 1.9 2.6 3.2 2.5 1.3-.1 1.8-.8 3.3-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-3.1-3.9zM14 5.2c.7-.8 1.2-2 1-3.2-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.5 2.9-1.3z"/></svg>`},
   {id:'shop', cls:'shop', label:'להמשיך עם Shop', svg:`<svg viewBox="0 0 24 24"><path d="M3 5h4l2 9h9l2-6H8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="19" r="1.6" fill="currentColor"/><circle cx="17" cy="19" r="1.6" fill="currentColor"/></svg>`},
 ];
 function renderSignIn(){
@@ -257,7 +295,6 @@ function renderSignIn(){
       <div class="or">או</div>
       <button type="button" class="auth-btn email" data-p="email">✉️ <span>עם מייל וקוד חד־פעמי</span></button></div>
     <p class="tiny">${T("signin_tiny", "בלי סיסמאות. הפרטים לא נמסרים לאף חנות.")}</p>
-    <div class="demo-note">דמו: בגרסה הסופית הכפתורים מעבירים להתחברות של החנות (${CONFIG.STORE_HOME.replace('https://','')}) וחוזרים לכאן. גם בדמו העמוד באמת יוצא וחוזר — כדי לוודא שהתשובות שורדות.</div>
   </div>`;
   $$('.auth-btn', el).forEach(b => b.onclick = () => Identity.signIn(b.dataset.p, S));
 }
@@ -594,7 +631,7 @@ function renderGifts(){
 
 /* ---------- הגדרות ---------- */
 $('#btnSettings').onclick = () => {
-  openModal(`<h2>הגדרות</h2><p>מחובר/ת דרך ${esc(USER?.provider || '')}.</p>
+  openModal(`<h2>הגדרות</h2><p>מחובר/ת לחשבון בחנות.</p>
     <div style="display:grid;gap:8px"><button type="button" class="btn soft" id="optProfile">שינוי תאריך / תאומים</button><button type="button" class="btn soft" id="optSignOut">יציאה מהחשבון</button><button type="button" class="btn ghost" id="optClose">סגירה</button></div>
     <p class="why" style="text-align:center">גרסת נתונים ${VERSION.v} · ${MODELS.length.toLocaleString('he-IL')} מוצרים</p>`);
   $('#optProfile').onclick = () => { closeModal(); editProfile(); };
@@ -609,18 +646,21 @@ async function boot(){
   showScreen('screen-loading');
   try { await loadData(); }
   catch (e) { $('#errMsg').textContent = 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'; showScreen('screen-error'); return; }
-  const back = Identity.completeSignIn();
-  if (back) {
-    USER = back.user;
-    S = mergeDraft(await Identity.loadList(USER.id), back.draft);
-    save();
-    if (!S.profile) { renderOnboard(); return; }
-    enterApp(); toast('ההרשמה הושלמה — הרשימה נשמרה 🌸');
-    return;
+  const draftBack = Identity.completeSignIn();    // האם חזרנו מהתחברות (יש טיוטה מקודדת בכתובת)?
+  USER = await Identity.current();                // מי מחובר/ת עכשיו, לפי שופיפיי
+  if (draftBack) {
+    if (USER) {
+      S = mergeDraft(await Identity.loadList(), draftBack.draft);
+      save();
+      if (!S.profile) { renderOnboard(); return; }
+      enterApp(); toast('ההרשמה הושלמה — הרשימה נשמרה 🌸');
+      return;
+    }
+    // חזרנו מדף ההתחברות אבל אין זיהוי (למשל ההתחברות בוטלה) — נשארים עם הטיוטה במסך ההרשמה
+    S = normalize(draftBack.draft || EMPTY()); renderSignIn(); return;
   }
-  USER = Identity.current();
   if (USER) {
-    S = normalize(await Identity.loadList(USER.id));
+    S = normalize(await Identity.loadList());
     if (!S.profile) { renderOnboard(); return; }
     enterApp(); return;
   }
