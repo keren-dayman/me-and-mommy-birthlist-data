@@ -77,17 +77,16 @@
 
 /* מסך הרשמה */
 #bl .auth{display:grid;gap:10px;margin:6px 0 16px}
-#bl .auth-btn{display:flex;align-items:center;justify-content:center;gap:12px;border-radius:999px;padding:14px 18px;font-weight:700;font-size:16.5px;border:2px solid var(--line);background:var(--surface);color:var(--ink)}
-#bl .auth-btn svg{width:22px;height:22px;flex:0 0 auto}
-#bl .auth-btn.google{border-color:#dadce0}
-#bl .auth-btn.apple{background:#111;color:#fff;border-color:#111}
-#bl .auth-btn.shop{background:#5A31F4;color:#fff;border-color:#5A31F4}
-#bl .auth-btn.email{background:var(--surface-2);border-color:var(--surface-2);color:var(--peach-ink)}
 #bl .or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;margin:4px 0}
 #bl .or::before,#bl .or::after{content:"";flex:1;height:1px;background:var(--line)}
+#bl .admin-box{margin-top:14px;padding:12px;border:2px dashed var(--peach-deep);border-radius:14px;background:var(--surface-2)}
+#bl .admin-box .ttl{font-weight:700;font-size:14px;margin-bottom:8px;color:var(--peach-ink)}
+#bl .admin-box .row-btns{display:flex;flex-wrap:wrap;gap:8px}
+#bl .admin-hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+#bl .adm-store{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+#bl .mcard.dim{opacity:.55}
 #bl .summary-box{background:var(--surface);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);margin-bottom:18px;display:grid;gap:4px}
 #bl .summary-box b{font-family:var(--font-head)}
-#bl .demo-note{font-size:12.5px;color:var(--muted);background:var(--amber-soft);border-radius:10px;padding:6px 10px;margin-top:10px}
 
 /* ===================== האפליקציה ===================== */
 #bl .hdr{padding:18px 0 6px;display:flex;align-items:center;justify-content:space-between;gap:12px}
