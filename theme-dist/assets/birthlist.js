@@ -52,7 +52,9 @@ const TODAY = new Date();
 const daysAgo = iso => Math.floor((TODAY - new Date(iso)) / 864e5);
 const fmtChecked = iso => { const d = daysAgo(iso); return d <= 0 ? 'נבדק היום' : d === 1 ? 'נבדק אתמול' : `נבדק לפני ${d} ימים`; };
 const fmtDate = iso => new Date(iso).toLocaleDateString('he-IL', {day:'numeric', month:'numeric'});
-const brandName = b => (!b || b.includes(':')) ? '' : (BRAND_NAMES[b] || b);
+// שם המותג מגיע מהקובץ המפורסם (bl_data.brands — נבנה ב-build_bundle.py, שם גם מתקנים שמות).
+// הטבלה המקומית למעלה נשארת רק כרשת ביטחון לקובץ נתונים ישן שנשמר במטמון.
+const brandName = b => !b ? '' : ((DATA && DATA.brands && DATA.brands[b]) || (b.includes(':') ? '' : (BRAND_NAMES[b] || b)));
 const ic = id => `<svg class="icon" aria-hidden="true"><use href="#${id}"/></svg>`;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 let toastT; function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
