@@ -179,6 +179,7 @@ function prepareData(){
     const m = {...raw};
     if (ov.name) m.n = ov.name;
     if (ov.item && itemById[ov.item]) m.i = ov.item;
+    if (ov.img && /^https:\/\/cdn\.shopify\.com\//.test(ov.img)) m.img = ov.img;
     const hs = new Set(ov.hs || []);
     m.offers = Object.entries(m.o).filter(([sid]) => STORES[sid] && !STORES[sid].hidden && !hs.has(sid))
       .map(([sid, o]) => ({sid, p:o.p, px:o.px, a:o.a === 1, u:(ov.url && ov.url[sid]) || o.u}))
@@ -563,6 +564,7 @@ function openModel(mid){
     $('[data-adm="hide"]', $('#sheet'))?.addEventListener('click', () => { closeSheet(); adminApply(m.id, {hide: m.adminHidden ? null : 1}, m.adminHidden ? 'המוצר הוחזר לכולן ✓' : 'המוצר הוסתר מכולן'); });
     $('[data-adm="rename"]', $('#sheet'))?.addEventListener('click', () => adminRename(m));
     $('[data-adm="move"]', $('#sheet'))?.addEventListener('click', () => adminMove(m));
+    $('[data-adm="img"]', $('#sheet'))?.addEventListener('click', () => adminImage(m));
     $$('[data-admhs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = [...(ovOf(m.id).hs || []), b.dataset.admhs]; closeSheet(); adminApply(m.id, {hs}, 'החנות הוסתרה מהמוצר הזה'); });
     $$('[data-admrs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = (ovOf(m.id).hs || []).filter(s => s !== b.dataset.admrs); closeSheet(); adminApply(m.id, {hs}, 'החנות הוחזרה ✓'); });
     $$('[data-admurl]', $('#sheet')).forEach(b => b.onclick = () => adminEditUrl(m, b.dataset.admurl));
@@ -580,6 +582,7 @@ function adminBox(m){
       <button type="button" class="btn ${m.adminHidden ? 'primary' : 'soft'} small" data-adm="hide">${m.adminHidden ? 'להחזיר את המוצר' : 'להסתיר את המוצר'}</button>
       <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
       <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
+      <button type="button" class="btn soft small" data-adm="img">החלפת תמונה</button>
     </div>${storeRows}${restoreRows}
     <div class="admin-hint">השינוי נשמר לכולן תוך כדקה, ונכנס לקובץ לצמיתות בעדכון הלילי.</div></div>`;
 }
@@ -609,6 +612,25 @@ function adminEditUrl(m, sid){
   $('#admCancel').onclick = closeModal;
   $('#admUrlReset')?.addEventListener('click', () => { const url = {...(ovOf(m.id).url || {})}; delete url[sid]; closeModal(); closeSheet(); adminApply(m.id, {url}, 'הקישור חזר למקורי ✓'); });
   $('#admSave').onclick = () => { const v = $('#admUrl').value.trim(); if (!/^https?:\/\//.test(v)) { toast('כתובת לא תקינה'); return; } const url = {...(ovOf(m.id).url || {})}; if (v === origU) delete url[sid]; else url[sid] = v; closeModal(); closeSheet(); adminApply(m.id, {url}, 'הקישור עודכן ✓'); };
+}
+function adminImage(m){
+  const orig = ((RAW_MODELS || []).find(x => x.id === m.id) || {}).img || '';
+  const cur = ovOf(m.id).img || orig;
+  const okImg = v => /^https:\/\/cdn\.shopify\.com\//.test(v);
+  openModal(`<h2>החלפת תמונה</h2>
+    <p style="font-size:14px">נכנסים לדף המוצר בחנות, קליק ימני על התמונה הרצויה ← "העתקת כתובת התמונה" ← מדביקים כאן. אפשר רק תמונות מחנויות שופיפיי (כתובת שמתחילה ב-cdn.shopify.com).</p>
+    <div class="field"><label for="admImg">כתובת התמונה</label><input id="admImg" type="url" dir="ltr" value="${esc(cur)}" placeholder="https://cdn.shopify.com/..."></div>
+    <div style="text-align:center;min-height:96px"><img id="admImgPrev" src="${esc(cur)}" alt="" style="max-height:96px;max-width:150px;border-radius:8px;${cur ? '' : 'display:none'}"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">${ovOf(m.id).img ? `<button type="button" class="btn ghost small" id="admImgReset" style="margin-inline-end:auto">חזרה לתמונה המקורית</button>` : ''}<button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admSave">שמירה</button></div>`);
+  $('#admCancel').onclick = closeModal;
+  $('#admImg').addEventListener('input', () => { const v = $('#admImg').value.trim(), p = $('#admImgPrev'); if (okImg(v)) { p.src = v; p.style.display = ''; } else p.style.display = 'none'; });
+  $('#admImgReset')?.addEventListener('click', () => { closeModal(); closeSheet(); adminApply(m.id, {img: null}, 'התמונה חזרה למקורית ✓'); });
+  $('#admSave').onclick = () => {
+    let v = $('#admImg').value.trim();
+    if (!okImg(v)) { toast('אפשר רק תמונה מחנות שופיפיי — כתובת שמתחילה ב-cdn.shopify.com'); return; }
+    v = v.split('?')[0] + '?width=200';
+    closeModal(); closeSheet(); adminApply(m.id, {img: v === orig ? null : v}, 'התמונה עודכנה לכולן ✓');
+  };
 }
 
 /* ---------- מחיר אישי — הנחת מועדון/קופון, נשמר רק ברשימה של המשתמש/ת ---------- */
