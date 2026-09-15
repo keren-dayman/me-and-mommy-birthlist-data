@@ -638,6 +638,77 @@ function adminImage(m){
   };
 }
 
+/* ---------- הוספת מוצר לכולן (מנהל) — מנגנון אחד זהה לכל שש החנויות ---------- */
+// מזהים את החנות רק מהדומיין של הקישור (לקח ה-agalease — לא מנחשים מכינוי).
+const NIGHTLY_STORES = {shilav:1, babystar:1, motsesim:1, agalease:1};
+function manualStoreOf(u){
+  try {
+    const h = new URL(u).hostname.replace(/^www\./, '');
+    for (const [sid, s] of Object.entries(STORES)) if (new URL(s.u).hostname.replace(/^www\./, '') === h) return sid;
+  } catch(e) {}
+  return null;
+}
+// רק בכלי הניהול (החלטת דניאל 15.9): ללקוחות אין הערות קצב-עדכון.
+function manualFresh(sid){ return NIGHTLY_STORES[sid] ? 'המחיר יתעדכן מדי לילה' : 'המחיר יתעדכן רק בסריקה הידנית שלך (בערך פעם בשבוע)'; }
+function manualStatusLine(k){
+  const st = (DATA.manual || {})[k];
+  if (!st) return {t:'⏳ ממתין לעדכון הלילי — ייכנס לקובץ של כולן עד מחר בבוקר', open:null};
+  if (st.s === 'ok') return {t:'✓ פעיל בקובץ לכולן', open: modelById[st.id] ? st.id : null};
+  if (st.s === 'duplicate') return {t:'כבר קיים בהתאמות האוטומטיות — אין צורך בהוספה', open: modelById[st.id] ? st.id : null};
+  if (st.s === 'not_found') return {t:'⚠️ לא נמצא בסריקה של החנות — לבדוק שזה קישור לדף מוצר', open:null};
+  if (st.s === 'bad_url') return {t:'⚠️ הקישור אינו מאחת משש החנויות', open:null};
+  if (st.s === 'bad_item') return {t:'⚠️ הפריט שנבחר כבר לא קיים ברשימה', open:null};
+  if (st.s === 'no_feed') return {t:'⚠️ אין נתוני סריקה לחנות הזו כרגע', open:null};
+  return {t:'⚠️ ' + esc(st.s), open:null};
+}
+function adminManualProducts(){
+  const man = OVERRIDES.manual || {};
+  const rows = Object.keys(man).sort((a, b) => ((man[a].added || '') + a).localeCompare((man[b].added || '') + b)).map(k => {
+    const e = man[k], sid = manualStoreOf(e.url), it = itemById[e.item], st = manualStatusLine(k);
+    return `<div class="adm-store" style="flex-wrap:wrap"><div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600">${sid ? esc(STORES[sid].n) : 'חנות לא מזוהה'} · ${it ? esc(it.n) : 'פריט ' + esc(String(e.item))}${e.note ? ` · <span style="font-weight:400">${esc(e.note)}</span>` : ''}</div>
+      <div style="font-size:12px;color:var(--muted);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.url)}</div>
+      <div style="font-size:12px">${st.t}${sid ? ' · ' + manualFresh(sid) : ''}</div></div>
+      ${st.open ? `<button type="button" class="btn ghost small" data-mopen="${esc(st.open)}">לצפייה</button>` : ''}
+      <button type="button" class="btn ghost small" data-mdel="${esc(k)}" style="color:var(--rose)">הסרה</button></div>`;
+  }).join('');
+  openModal(`<h2>🛠 מוצרים שהוספת לכולן</h2>
+    <p style="font-size:14px">מדביקים קישור לדף מוצר מאחת משש החנויות ובוחרים לאיזה פריט הוא שייך. המוצר מצטרף אצל כולן לצד ההתאמות האוטומטיות — לא במקומן — ומקבל עדכוני מחיר אוטומטיים בכל סריקה של החנות שלו, כמו כל מוצר אחר.</p>
+    <div class="field"><label for="amUrl">קישור לדף המוצר</label><input id="amUrl" type="url" dir="ltr" placeholder="https://..."></div>
+    <div id="amStore" style="font-size:13px;min-height:18px;margin:-6px 0 8px"></div>
+    <div class="field"><label for="amItem">לאיזה פריט ברשימה?</label><select id="amItem">${ITEMS.map(it => `<option value="${it.id}">${esc(it.c)} — ${esc(it.n)}</option>`).join('')}</select></div>
+    <div class="field"><label for="amNote">הערה (רואה רק את/ה)</label><input id="amNote" type="text" maxlength="120"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="amClose">סגירה</button><button type="button" class="btn primary" id="amAdd">הוספה לכולן</button></div>
+    ${rows ? `<div class="ttl" style="margin-top:16px">מה שכבר נוסף</div>${rows}` : ''}
+    <div class="admin-hint">מוצר חדש נכנס לקובץ של כולן בעדכון הלילי. שילב, בייביסטאר, מוצצים ועגליס נסרקות כל לילה; מיננה וסופר-פארם מתעדכנות רק כשאת/ה סורק/ת אותן מהדפדפן.</div>`);
+  const urlBox = $('#amUrl'), storeLine = $('#amStore');
+  urlBox.addEventListener('input', () => {
+    const sid = manualStoreOf(urlBox.value.trim());
+    storeLine.innerHTML = !urlBox.value.trim() ? '' : sid
+      ? `זוהתה חנות: <b>${esc(STORES[sid].n)}</b> · ${manualFresh(sid)}`
+      : '<span style="color:var(--rose)">הקישור אינו מאחת משש החנויות שהכלי מכיר</span>';
+  });
+  $('#amClose').onclick = closeModal;
+  $('#amAdd').onclick = async () => {
+    const url = urlBox.value.trim();
+    if (!manualStoreOf(url)) { toast('צריך קישור לדף מוצר מאחת משש החנויות'); urlBox.focus(); return; }
+    const k = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const e = {item: +$('#amItem').value, url, added: new Date().toISOString().slice(0, 10)};
+    const note = $('#amNote').value.trim(); if (note) e.note = note;
+    (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
+    closeModal();
+    toast((await saveOverrides()) ? 'נשמר — ייכנס לכולן בעדכון הלילי ✓' : 'השמירה נכשלה — לנסות שוב');
+    adminManualProducts();
+  };
+  $$('[data-mdel]', $('#modal')).forEach(b => b.onclick = async () => {
+    delete OVERRIDES.manual[b.dataset.mdel];
+    closeModal();
+    toast((await saveOverrides()) ? 'הוסר — ייעלם מהקובץ בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+    adminManualProducts();
+  });
+  $$('[data-mopen]', $('#modal')).forEach(b => b.onclick = () => { closeModal(); openModel(b.dataset.mopen); });
+}
+
 /* ---------- מחיר אישי — הנחת מועדון/קופון, נשמר רק ברשימה של המשתמש/ת ---------- */
 function openPriceEdit(key, itemId){
   const f = findByKey(key), t = f.custom || f.pick; if (!t) return;
@@ -665,7 +736,9 @@ function openManual(itemId, cat){
     <div class="field"><label for="mfStore">חנות או אתר</label><input id="mfStore" placeholder="למשל: עלי אקספרס, חנות בקניון…"></div>
     <div class="field two"><div class="field"><label for="mfPrice">מחיר (₪)</label><input id="mfPrice" type="number" min="0" step="0.1" inputmode="decimal"></div><div class="field"><label for="mfQty">כמות</label><input id="mfQty" type="number" min="1" value="${it ? defaultQty(it) : 1}" inputmode="numeric"></div></div>
     <div class="field"><label for="mfUrl">קישור (לא חובה)</label><input id="mfUrl" type="url" dir="ltr" placeholder="https://"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>`);
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>
+    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">🛠 מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button></div></div>` : ''}`);
+  $('#mfAdminAll')?.addEventListener('click', () => { closeModal(); adminManualProducts(); });
   if (!it) {
     const fillItems = () => { const c = $('#mfCat').value; $('#mfItem').innerHTML = `<option value="">פריט חדש — לא מהרשימה</option>` + ITEMS.filter(i => i.c === c).map(i => `<option value="${i.id}">${esc(i.n)}</option>`).join(''); $('#mfNameWrap').hidden = false; };
     fillItems();
