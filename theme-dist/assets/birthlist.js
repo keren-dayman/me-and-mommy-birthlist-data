@@ -84,7 +84,7 @@ const Identity = (() => {
     try {
       const r = await fetch(APP_PROXY_BASE + 'whoami', {credentials:'same-origin', cache:'no-store'});
       const d = await r.json();
-      return (d && d.ok && d.logged_in) ? {id:'shopify'} : null;
+      return (d && d.ok && d.logged_in) ? {id:'shopify', admin: !!d.admin} : null;
     } catch(e) { return null; }
   }
 
@@ -148,24 +148,40 @@ const Identity = (() => {
    טעינת הנתונים — תמיד שתי משיכות, בסדר הזה (מסמך 23 פרק 2)
    ===================================================================== */
 let DATA = null, VERSION = null, STORES = {}, ITEMS = [], MODELS = [], CATS = [];
-const modelsByItem = {}, modelById = {}, itemById = {};
+let modelsByItem = {}, modelById = {}, itemById = {}, hiddenByItem = {};
+let OVERRIDES = { v:1, models:{} }, IS_ADMIN = false, RAW_MODELS = null;
 
 async function loadData(){
   const ver = await fetch(CONFIG.DATA_BASE + 'bl_version.json?t=' + Date.now(), {cache:'no-store'}).then(r => { if (!r.ok) throw new Error('version ' + r.status); return r.json(); });
   const data = await fetch(CONFIG.DATA_BASE + 'bl_data.json?v=' + ver.v).then(r => { if (!r.ok) throw new Error('data ' + r.status); return r.json(); });
   if (!data.items || !data.models || !data.stores) throw new Error('bad data');
-  VERSION = ver; DATA = data; prepareData();
+  VERSION = ver; DATA = data;
+  // תיקוני המנהל (של דניאל) — אם אינם זמינים, הכלי עובד רגיל עם הקובץ כמו שהוא
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'overrides', {credentials:'same-origin', cache:'no-store'});
+    const d = await r.json();
+    if (d && d.ok && d.overrides && typeof d.overrides === 'object' && !Array.isArray(d.overrides)) OVERRIDES = Object.assign({v:1, models:{}}, d.overrides);
+  } catch(e) {}
+  prepareData();
 }
 function prepareData(){
   STORES = DATA.stores;
   for (const [k, s] of Object.entries(STORES)) { s.id = k; s.days = daysAgo(s.d); s.hidden = s.days > CONFIG.STALE_HIDE_DAYS; s.stale = s.days > CONFIG.STALE_WARN_DAYS; }
   ITEMS = DATA.items.slice().sort((a, b) => a.id - b.id);
+  itemById = {}; modelsByItem = {}; modelById = {}; hiddenByItem = {};
   ITEMS.forEach(i => { itemById[i.id] = i; modelsByItem[i.id] = []; });
   CATS = [...new Set(ITEMS.map(i => i.c))];
+  RAW_MODELS = RAW_MODELS || DATA.models;    // המקור נשמר כמו שהוא — התיקונים מוחלים על עותקים, כך שאפשר להחיל מחדש
   MODELS = [];
-  for (const m of DATA.models) {
-    m.offers = Object.entries(m.o).filter(([sid]) => STORES[sid] && !STORES[sid].hidden)
-      .map(([sid, o]) => ({sid, p:o.p, px:o.px, a:o.a === 1, u:o.u}))
+  const ovAll = OVERRIDES.models || {};
+  for (const raw of RAW_MODELS) {
+    const ov = ovAll[raw.id] || {};
+    const m = {...raw};
+    if (ov.name) m.n = ov.name;
+    if (ov.item && itemById[ov.item]) m.i = ov.item;
+    const hs = new Set(ov.hs || []);
+    m.offers = Object.entries(m.o).filter(([sid]) => STORES[sid] && !STORES[sid].hidden && !hs.has(sid))
+      .map(([sid, o]) => ({sid, p:o.p, px:o.px, a:o.a === 1, u:(ov.url && ov.url[sid]) || o.u}))
       .sort((a, b) => (a.p - b.p) || (b.a - a.a));
     if (!m.offers.length) continue;
     m.best = m.offers[0];
@@ -174,9 +190,35 @@ function prepareData(){
     m.nStores = m.offers.length;
     m.brand = brandName(m.b);
     modelById[m.id] = m;
+    if (ov.hide) { m.adminHidden = true; (hiddenByItem[m.i] = hiddenByItem[m.i] || []).push(m); continue; }
     if (modelsByItem[m.i]) { modelsByItem[m.i].push(m); MODELS.push(m); }
   }
   for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
+  for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
+}
+
+/* ---------- תיקוני מנהל — רק דניאל רואה ושומר; משפיעים על כל הנשים ---------- */
+function ovOf(mid){ return (OVERRIDES.models || {})[mid] || {}; }
+function setOverride(mid, patch){
+  OVERRIDES.models = OVERRIDES.models || {};
+  const o = OVERRIDES.models[mid] = Object.assign({}, OVERRIDES.models[mid]);
+  for (const [k, v] of Object.entries(patch)) {
+    const empty = v == null || v === '' || (Array.isArray(v) && !v.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
+    if (empty) delete o[k]; else o[k] = v;
+  }
+  if (!Object.keys(o).length) delete OVERRIDES.models[mid];
+}
+async function saveOverrides(){
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'overrides', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify(OVERRIDES)});
+    const d = await r.json();
+    return !!(d && d.ok);
+  } catch(e) { return false; }
+}
+async function adminApply(mid, patch, msg){
+  setOverride(mid, patch);
+  prepareData(); renderList();
+  toast((await saveOverrides()) ? msg : 'התיקון מוצג אצלך, אבל השמירה נכשלה — לנסות שוב');
 }
 
 /* =====================================================================
@@ -252,7 +294,10 @@ function renderOnboard(){
     S.profile = { due: OB.due, twins: OB.twins, first: OB.first };
     if (editing) { save(); enterApp(); toast('הפרטים עודכנו'); return; }
     ls.set('bl_draft', S);           // הטיוטה נשמרת כבר עכשיו — עוד לפני ההרשמה
-    renderBuild();
+    // דניאל, 15.9: בלי מסך ביניים — הכפתור מוביל ישר להתחברות של שופיפיי
+    // (הבחירה Google/Shop/מייל קורית שם, פעם אחת), ובחזרה — אוטומטית לרשימה.
+    if (USER) { save(); renderBuild(); return; }
+    Identity.signIn('direct', S);
   };
 }
 function editProfile(){ const p = S.profile || {}; OB.step = 1; OB.due = p.due || null; OB.twins = !!p.twins; OB.first = p.first !== false; renderOnboard(); }
@@ -268,7 +313,7 @@ function renderBuild(){
   const list = $('#buildList'), bar = $('#buildBar'), btn = $('#buildNext');
   let i = 0;
   const tick = () => {
-    if (i >= ITEMS.length) { bar.style.width = '100%'; btn.disabled = false; btn.textContent = T('build_btn', 'הרשימה מוכנה — לשמור אותה'); return; }
+    if (i >= ITEMS.length) { bar.style.width = '100%'; btn.disabled = false; btn.textContent = T('build_btn', 'לרשימה שלי ←'); setTimeout(() => { if (!$('#screen-build').hidden) enterApp(); }, 1200); return; }
     const it = ITEMS[i++]; const n = (modelsByItem[it.id] || []).length;
     const row = document.createElement('div'); row.innerHTML = `<i>✓</i><span>${esc(it.n)}</span><small>${n ? `${n} מוצרים` : ''}</small>`;
     list.prepend(row); while (list.children.length > 9) list.lastChild.remove();
@@ -276,29 +321,23 @@ function renderBuild(){
     setTimeout(tick, 45);
   };
   tick();
-  btn.onclick = renderSignIn;
+  btn.onclick = () => enterApp();
   list.onclick = () => { i = ITEMS.length; };
 }
 
-/* ---------- 3. הרשמה (אין מצב אורח/ת) ---------- */
-const PROVIDERS = [
-  {id:'google', cls:'google', label:'להמשיך עם Google', svg:`<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.7-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.2v3.1C3.2 21.3 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.3 14.3c-.5-1.5-.5-3.1 0-4.6V6.6H1.2c-1.6 3.3-1.6 7.2 0 10.5l4.1-2.8z"/><path fill="#EA4335" d="M12 4.7c1.7 0 3.3.6 4.5 1.8l3.4-3.4C17.9 1.2 15.1 0 12 0 7.3 0 3.2 2.7 1.2 6.6l4.1 3.1c.9-2.9 3.6-5 6.7-5z"/></svg>`},
-  {id:'shop', cls:'shop', label:'להמשיך עם Shop', svg:`<svg viewBox="0 0 24 24"><path d="M3 5h4l2 9h9l2-6H8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="19" r="1.6" fill="currentColor"/><circle cx="17" cy="19" r="1.6" fill="currentColor"/></svg>`},
-];
+/* ---------- 3. חזרה מהתחברות שלא הושלמה (המסלול הרגיל מדלג על המסך הזה) ---------- */
 function renderSignIn(){
   showScreen('screen-signin');
   const el = $('#screen-signin');
   const nSel = Object.values(S.sel).reduce((a, v) => a + v.length, 0), nHave = Object.keys(S.have).length;
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span></div><div class="step">${ART.lock}
-    <h1>${T("signin_title", "הרשימה מוכנה 🌸")}</h1>
-    <p class="lead">${T("signin_lead", "כדי שהיא תישמר ותחכה לכם מכל מכשיר — נרשמים בלחיצה אחת.")}</p>
+    <h1>${T("signin_title", "עוד צעד קטן 🌸")}</h1>
+    <p class="lead">${T("signin_lead", "התשובות שלכם שמורות. כדי שהרשימה תישמר לתמיד ותחכה לכם מכל מכשיר — מתחברים; בעמוד הבא בוחרים איך: Google, Shop או מייל עם קוד.")}</p>
     <div class="summary-box"><span>תאריך משוער: <b>${esc(dueText())}</b>${S.profile?.twins ? ' · תאומים 👶👶' : ''}</span><span>${ITEMS.length} פריטים · ${MODELS.length.toLocaleString('he-IL')} מוצרים עם מחיר חי${nSel || nHave ? ` · כבר סומנו ${nSel + nHave}` : ''}</span></div>
-    <div class="auth">${PROVIDERS.map(p => `<button type="button" class="auth-btn ${p.cls}" data-p="${p.id}">${p.svg}<span>${p.label}</span></button>`).join('')}
-      <div class="or">או</div>
-      <button type="button" class="auth-btn email" data-p="email">✉️ <span>עם מייל וקוד חד־פעמי</span></button></div>
+    <div class="nav" style="justify-content:center"><button type="button" class="btn primary big" id="btnAuth">${T("signin_btn", "להרשמה / התחברות")}</button></div>
     <p class="tiny">${T("signin_tiny", "בלי סיסמאות. הפרטים לא נמסרים לאף חנות.")}</p>
   </div>`;
-  $$('.auth-btn', el).forEach(b => b.onclick = () => Identity.signIn(b.dataset.p, S));
+  $('#btnAuth', el).onclick = () => Identity.signIn('direct', S);
 }
 
 /* =====================================================================
@@ -483,7 +522,7 @@ function openModels(itemId){
   renderModels();
 }
 function renderModels(){
-  const all = modelsByItem[MS.item] || [], byB = {}; all.forEach(m => { if (m.brand) byB[m.brand] = (byB[m.brand]||0) + 1; });
+  const all = (modelsByItem[MS.item] || []).concat(IS_ADMIN ? (hiddenByItem[MS.item] || []) : []), byB = {}; all.forEach(m => { if (m.brand) byB[m.brand] = (byB[m.brand]||0) + 1; });
   const brands = Object.entries(byB).sort((a, b) => b[1] - a[1]).slice(0, 15);
   $('#msBrands').innerHTML = brands.length > 1 ? `<button type="button" class="chip" data-b="all" aria-pressed="${MS.brand==='all'}">כל המותגים<span class="n num">${all.length}</span></button>` + brands.map(([v, n]) => `<button type="button" class="chip" data-b="${esc(v)}" aria-pressed="${MS.brand===v}">${esc(v)}<span class="n num">${n}</span></button>`).join('') : '';
   $$('#msBrands .chip').forEach(b => b.onclick = () => { MS.brand = b.dataset.b; MS.page = 1; renderModels(); });
@@ -493,7 +532,7 @@ function renderModels(){
   const multi = all.filter(m => m.nStores > 1).length;
   $('#msSub').textContent = `${ms.length} מוצרים${brands.length > 1 ? ` · ${Object.keys(byB).length} מותגים` : ''}${multi ? ` · ${multi} בכמה חנויות` : ''}`;
   const shown = ms.slice(0, MS.page * CONFIG.MODELS_PAGE);
-  $('#msList').innerHTML = (shown.length ? `<div class="mgrid">${shown.map(m => `<button type="button" class="mcard" data-m="${esc(m.id)}">${thumb(m.img, 'pic', true)}<span class="t">${esc(m.n)}</span><span class="v">${esc(m.brand || '')}${m.cl?.length ? `${m.brand ? ' · ' : ''}${m.cl.length} צבעים` : ''}${!m.best.a ? `${m.brand || m.cl?.length ? ' · ' : ''}<span class="unavail">לבדוק זמינות</span>` : ''}</span><span class="pl"><span class="p num">${modelPriceLabel(m)}</span><span class="s ${m.nStores>1?'multi':''}">${m.nStores > 1 ? `ב-${m.nStores} חנויות` : esc(STORES[m.best.sid].n)}</span></span></button>`).join('')}</div>` : `<p class="notice">לא נמצאו מוצרים לחיפוש הזה.</p>`)
+  $('#msList').innerHTML = (shown.length ? `<div class="mgrid">${shown.map(m => `<button type="button" class="mcard${m.adminHidden ? ' dim' : ''}" data-m="${esc(m.id)}">${thumb(m.img, 'pic', true)}<span class="t">${esc(m.n)}</span>${m.adminHidden ? '<span class="v"><span class="unavail">מוסתר — רואות רק אותך</span></span>' : ''}<span class="v">${esc(m.brand || '')}${m.cl?.length ? `${m.brand ? ' · ' : ''}${m.cl.length} צבעים` : ''}${!m.best.a ? `${m.brand || m.cl?.length ? ' · ' : ''}<span class="unavail">לבדוק זמינות</span>` : ''}</span><span class="pl"><span class="p num">${modelPriceLabel(m)}</span><span class="s ${m.nStores>1?'multi':''}">${m.nStores > 1 ? `ב-${m.nStores} חנויות` : esc(STORES[m.best.sid].n)}</span></span></button>`).join('')}</div>` : `<p class="notice">לא נמצאו מוצרים לחיפוש הזה.</p>`)
     + (ms.length > shown.length ? `<button type="button" class="more" id="msMore">להציג עוד ${Math.min(CONFIG.MODELS_PAGE, ms.length - shown.length)} מתוך ${ms.length - shown.length}</button>` : '');
   $$('#msList .mcard').forEach(b => b.onclick = () => openModel(b.dataset.m));
   $('#msMore')?.addEventListener('click', () => { MS.page++; renderModels(); });
@@ -510,7 +549,7 @@ function openModel(mid){
       <div class="acts"><button type="button" class="btn primary small" data-add="${esc(o.sid)}">${chosen ? 'להוסיף שוב' : 'הוספה לרשימה'}</button><a class="btn soft small" href="${esc(o.u)}" target="_blank" rel="noopener">לדף המוצר ↗</a></div></div>`; }).join('');
   openSheet(`<div class="head"><div><h2 style="font-size:18px">${esc(m.n)}</h2><div class="sub">${m.brand ? esc(m.brand) + ' · ' : ''}${esc(it.n)}</div></div><button type="button" class="btn soft small" data-back>${(modelsByItem[it.id].length > 1) ? ic('i-back') + ' למוצרים' : 'סגירה'}</button></div>
     <div class="body">${thumb(m.img, 'lg', true)}${m.cl?.length ? `<div class="colors">${m.cl.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
-    ${many ? (allSame ? `<p class="notice" style="margin:0 0 12px">אותו מחיר ב-${m.offers.length} החנויות.</p>` : `<p class="notice info" style="margin:0 0 12px">נמכר ב-${m.offers.length} חנויות — המחיר הזול ביותר מסומן.</p>`) : `<p class="notice" style="margin:0 0 12px">נמצא בחנות אחת בלבד, אין השוואה.</p>`}${body}</div>`);
+    ${many ? (allSame ? `<p class="notice" style="margin:0 0 12px">אותו מחיר ב-${m.offers.length} החנויות.</p>` : `<p class="notice info" style="margin:0 0 12px">נמכר ב-${m.offers.length} חנויות — המחיר הזול ביותר מסומן.</p>`) : `<p class="notice" style="margin:0 0 12px">נמצא בחנות אחת בלבד, אין השוואה.</p>`}${body}${adminBox(m)}</div>`);
   $('[data-back]', $('#sheet')).onclick = () => (modelsByItem[it.id].length > 1) ? openModels(it.id) : closeSheet();
   $$('[data-add]', $('#sheet')).forEach(b => b.onclick = () => {
     const o = m.offers.find(x => x.sid === b.dataset.add);
@@ -520,6 +559,56 @@ function openModel(mid){
     save(); closeSheet(); rerenderItem(it.id); toast(`נוסף מ${STORES[o.sid].n} ✓`);
     $(`#cats .item[data-id="${it.id}"]`)?.scrollIntoView({block:'nearest'});
   });
+  if (IS_ADMIN) {
+    $('[data-adm="hide"]', $('#sheet'))?.addEventListener('click', () => { closeSheet(); adminApply(m.id, {hide: m.adminHidden ? null : 1}, m.adminHidden ? 'המוצר הוחזר לכולן ✓' : 'המוצר הוסתר מכולן'); });
+    $('[data-adm="rename"]', $('#sheet'))?.addEventListener('click', () => adminRename(m));
+    $('[data-adm="move"]', $('#sheet'))?.addEventListener('click', () => adminMove(m));
+    $$('[data-admhs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = [...(ovOf(m.id).hs || []), b.dataset.admhs]; closeSheet(); adminApply(m.id, {hs}, 'החנות הוסתרה מהמוצר הזה'); });
+    $$('[data-admrs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = (ovOf(m.id).hs || []).filter(s => s !== b.dataset.admrs); closeSheet(); adminApply(m.id, {hs}, 'החנות הוחזרה ✓'); });
+    $$('[data-admurl]', $('#sheet')).forEach(b => b.onclick = () => adminEditUrl(m, b.dataset.admurl));
+  }
+}
+
+/* ---------- מסכי העריכה של המנהל ---------- */
+function adminBox(m){
+  if (!IS_ADMIN) return '';
+  const ov = ovOf(m.id);
+  const storeRows = m.offers.map(o => `<div class="adm-store"><span style="font-size:13px;font-weight:600">${esc(STORES[o.sid].n)}</span><button type="button" class="btn ghost small" data-admurl="${esc(o.sid)}">עריכת קישור</button>${m.offers.length > 1 ? `<button type="button" class="btn ghost small" data-admhs="${esc(o.sid)}" style="color:var(--rose)">להסתיר חנות זו</button>` : ''}</div>`).join('');
+  const restoreRows = (ov.hs || []).map(sid => `<div class="adm-store"><span style="font-size:13px">${esc(STORES[sid] ? STORES[sid].n : sid)} — הוסתרה</span><button type="button" class="btn soft small" data-admrs="${esc(sid)}">להחזיר</button></div>`).join('');
+  return `<div class="admin-box"><div class="ttl">🛠 עריכת מנהל — משפיע על כל הנשים</div>
+    <div class="row-btns">
+      <button type="button" class="btn ${m.adminHidden ? 'primary' : 'soft'} small" data-adm="hide">${m.adminHidden ? 'להחזיר את המוצר' : 'להסתיר את המוצר'}</button>
+      <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
+      <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
+    </div>${storeRows}${restoreRows}
+    <div class="admin-hint">השינוי נשמר לכולן תוך כדקה, ונכנס לקובץ לצמיתות בעדכון הלילי.</div></div>`;
+}
+function adminRename(m){
+  const orig = ((RAW_MODELS || []).find(x => x.id === m.id) || {}).n || '';
+  openModal(`<h2>שינוי שם המוצר</h2><p style="font-size:14px">השם המקורי מהחנות: <b>${esc(orig)}</b></p>
+    <div class="field"><label for="admName">שם חדש</label><input id="admName" type="text" value="${esc(m.n)}"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">${ovOf(m.id).name ? `<button type="button" class="btn ghost small" id="admNameReset" style="margin-inline-end:auto">חזרה לשם המקורי</button>` : ''}<button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admSave">שמירה</button></div>`);
+  $('#admCancel').onclick = closeModal;
+  $('#admNameReset')?.addEventListener('click', () => { closeModal(); closeSheet(); adminApply(m.id, {name:null}, 'חזר לשם המקורי ✓'); });
+  $('#admSave').onclick = () => { const v = $('#admName').value.trim(); if (!v) return; closeModal(); closeSheet(); adminApply(m.id, {name: v === orig ? null : v}, 'השם עודכן לכולן ✓'); };
+}
+function adminMove(m){
+  const orig = ((RAW_MODELS || []).find(x => x.id === m.id) || {}).i;
+  openModal(`<h2>העברת קטגוריה</h2><p style="font-size:14px">לאיזה פריט שייך "${esc(m.n)}"?</p>
+    <div class="field"><label for="admItem">פריט ברשימה</label><select id="admItem">${ITEMS.map(it => `<option value="${it.id}" ${it.id === m.i ? 'selected' : ''}>${esc(it.c)} — ${esc(it.n)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admSave">העברה</button></div>`);
+  $('#admCancel').onclick = closeModal;
+  $('#admSave').onclick = () => { const v = +$('#admItem').value; closeModal(); closeSheet(); adminApply(m.id, {item: v === orig ? null : v}, 'המוצר הועבר ✓'); };
+}
+function adminEditUrl(m, sid){
+  const raw = (RAW_MODELS || []).find(x => x.id === m.id) || {}, origU = (((raw.o || {})[sid]) || {}).u || '';
+  const cur = ((ovOf(m.id).url || {})[sid]) || origU;
+  openModal(`<h2>עריכת קישור — ${esc(STORES[sid].n)}</h2>
+    <div class="field"><label for="admUrl">כתובת דף המוצר</label><input id="admUrl" type="url" dir="ltr" value="${esc(cur)}"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">${(ovOf(m.id).url || {})[sid] ? `<button type="button" class="btn ghost small" id="admUrlReset" style="margin-inline-end:auto">חזרה לקישור המקורי</button>` : ''}<button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admSave">שמירה</button></div>`);
+  $('#admCancel').onclick = closeModal;
+  $('#admUrlReset')?.addEventListener('click', () => { const url = {...(ovOf(m.id).url || {})}; delete url[sid]; closeModal(); closeSheet(); adminApply(m.id, {url}, 'הקישור חזר למקורי ✓'); });
+  $('#admSave').onclick = () => { const v = $('#admUrl').value.trim(); if (!/^https?:\/\//.test(v)) { toast('כתובת לא תקינה'); return; } const url = {...(ovOf(m.id).url || {})}; if (v === origU) delete url[sid]; else url[sid] = v; closeModal(); closeSheet(); adminApply(m.id, {url}, 'הקישור עודכן ✓'); };
 }
 
 /* ---------- מחיר אישי — הנחת מועדון/קופון, נשמר רק ברשימה של המשתמש/ת ---------- */
@@ -650,6 +739,7 @@ async function boot(){
   catch (e) { $('#errMsg').textContent = 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'; showScreen('screen-error'); return; }
   const draftBack = Identity.completeSignIn();    // האם חזרנו מהתחברות (יש טיוטה מקודדת בכתובת)?
   USER = await Identity.current();                // מי מחובר/ת עכשיו, לפי שופיפיי
+  IS_ADMIN = !!(USER && USER.admin);
   if (draftBack) {
     if (USER) {
       S = mergeDraft(await Identity.loadList(), draftBack.draft);
