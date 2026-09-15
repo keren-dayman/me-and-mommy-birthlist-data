@@ -179,7 +179,7 @@ function prepareData(){
     const m = {...raw};
     if (ov.name) m.n = ov.name;
     if (ov.item && itemById[ov.item]) m.i = ov.item;
-    if (ov.img && /^https:\/\/cdn\.shopify\.com\//.test(ov.img)) m.img = ov.img;
+    if (ov.img && isShopifyImg(ov.img)) m.img = ov.img;
     const hs = new Set(ov.hs || []);
     m.offers = Object.entries(m.o).filter(([sid]) => STORES[sid] && !STORES[sid].hidden && !hs.has(sid))
       .map(([sid, o]) => ({sid, p:o.p, px:o.px, a:o.a === 1, u:(ov.url && ov.url[sid]) || o.u}))
@@ -571,6 +571,11 @@ function openModel(mid){
   }
 }
 
+// תמונה שופיפי אמיתית: או מ-cdn.shopify.com, או מדומיין החנות עצמה עם נתיב /cdn/shop/
+// (כך מעתיקים תמונה מדף מוצר בפועל — קליק ימני → העתקת כתובת התמונה)
+function isShopifyImg(v){
+  return /^https:\/\/cdn\.shopify\.com\//.test(v) || /^https:\/\/[^/]+\/cdn\/shop\/(files|products)\//.test(v);
+}
 /* ---------- מסכי העריכה של המנהל ---------- */
 function adminBox(m){
   if (!IS_ADMIN) return '';
@@ -616,10 +621,10 @@ function adminEditUrl(m, sid){
 function adminImage(m){
   const orig = ((RAW_MODELS || []).find(x => x.id === m.id) || {}).img || '';
   const cur = ovOf(m.id).img || orig;
-  const okImg = v => /^https:\/\/cdn\.shopify\.com\//.test(v);
+  const okImg = isShopifyImg;
   openModal(`<h2>החלפת תמונה</h2>
-    <p style="font-size:14px">נכנסים לדף המוצר בחנות, קליק ימני על התמונה הרצויה ← "העתקת כתובת התמונה" ← מדביקים כאן. אפשר רק תמונות מחנויות שופיפיי (כתובת שמתחילה ב-cdn.shopify.com).</p>
-    <div class="field"><label for="admImg">כתובת התמונה</label><input id="admImg" type="url" dir="ltr" value="${esc(cur)}" placeholder="https://cdn.shopify.com/..."></div>
+    <p style="font-size:14px">נכנסים לדף המוצר בחנות, קליק ימני על התמונה הרצויה ← "העתקת כתובת התמונה" ← מדביקים כאן. אפשר רק תמונות מחנויות שופיפיי — גם כתובת שמתחילה ב-cdn.shopify.com וגם כתובת מהדומיין של החנות עצמה (עם /cdn/shop/ בתוכה).</p>
+    <div class="field"><label for="admImg">כתובת התמונה</label><input id="admImg" type="url" dir="ltr" value="${esc(cur)}" placeholder="https://cdn.shopify.com/... או https://www.shilav.co.il/cdn/shop/..."></div>
     <div style="text-align:center;min-height:96px"><img id="admImgPrev" src="${esc(cur)}" alt="" style="max-height:96px;max-width:150px;border-radius:8px;${cur ? '' : 'display:none'}"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">${ovOf(m.id).img ? `<button type="button" class="btn ghost small" id="admImgReset" style="margin-inline-end:auto">חזרה לתמונה המקורית</button>` : ''}<button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admSave">שמירה</button></div>`);
   $('#admCancel').onclick = closeModal;
@@ -627,7 +632,7 @@ function adminImage(m){
   $('#admImgReset')?.addEventListener('click', () => { closeModal(); closeSheet(); adminApply(m.id, {img: null}, 'התמונה חזרה למקורית ✓'); });
   $('#admSave').onclick = () => {
     let v = $('#admImg').value.trim();
-    if (!okImg(v)) { toast('אפשר רק תמונה מחנות שופיפיי — כתובת שמתחילה ב-cdn.shopify.com'); return; }
+    if (!okImg(v)) { toast('אפשר רק תמונה מחנות שופיפיי — מ-cdn.shopify.com או מדף המוצר בחנות (קישור עם /cdn/shop/)'); return; }
     v = v.split('?')[0] + '?width=200';
     closeModal(); closeSheet(); adminApply(m.id, {img: v === orig ? null : v}, 'התמונה עודכנה לכולן ✓');
   };
