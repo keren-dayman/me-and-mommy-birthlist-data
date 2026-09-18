@@ -95,6 +95,13 @@
 #bl .rq-pic{width:46px;height:46px;flex:0 0 auto;object-fit:contain;border-radius:8px;background:var(--surface-2)}
 #bl .rq-ex{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.5}
 #bl .rq-ex b{color:var(--ink);font-weight:600}
+#bl .rq-shop{display:flex;align-items:flex-start;gap:8px;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+#bl .rq-ex > .rq-shop:first-child{border-top:0;padding-top:0;margin-top:0}
+#bl .rq-shop .st-t{font-size:13px}
+#bl .rq-li{display:flex;align-items:flex-start;gap:5px;margin-top:3px}
+#bl .rq-li>span{flex:1;min-width:0}
+#bl .rq-x{flex:0 0 auto;border:0;background:none;color:var(--rose);cursor:pointer;font-size:13px;line-height:1.4;padding:0 3px}
+#bl .rq-more{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;text-decoration:underline;padding:3px 0 0}
 #bl .adm-store{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
 #bl .mcard.dim{opacity:.55}
 #bl .mcard-x{position:absolute;top:4px;inset-inline-end:4px;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--surface-2);color:var(--rose);font-size:15px;line-height:1;box-shadow:var(--shadow);cursor:pointer;z-index:1}

@@ -677,22 +677,86 @@ function statusStores(){
         s.hidden ? ` — המחירים שלה כבר לא מוצגים` : s.stale ? ' — כדאי לסרוק' : ''}</div></div></div>`;
   }).join('');
 }
+// Shops whose full listing Daniel asked to see. A row can hold 50 listings, so each
+// shop shows its two ends until he opens it. Deliberately not persisted: it is a
+// glance, not a decision.
+const RQ_OPEN = new Set();
+function dropsOf(id){ return new Set(((OVERRIDES.drop || {})[id]) || []); }
+function liveEx(r){ const d = dropsOf(r.id); return (r.ex || []).filter(e => !d.has(e.k)); }
+function shopKeys(id, sid){
+  const r = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(x => x.id === id);
+  return r ? liveEx(r).filter(e => e.s === sid).map(e => e.k) : [];
+}
 function statusQueue(){
   const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
   if (!ADMIN_DOC) return '<p class="admin-hint">לא הצלחתי לטעון את קובץ הבדיקה.</p>';
   if (!q.length) return '<p style="font-size:13px;margin:4px 0 0">אין דגמים שממתינים לך. ✓</p>';
-  return `<p style="font-size:13px;margin:4px 0 8px">המנוע חושב שאלה אותו מוצר בכמה חנויות, אבל הפרש המחירים גדול מדי בשביל להיות בטוח — אז הוא מחכה לך. אם זה באמת אותו מוצר, הוא ייצא לאוויר עם השוואת מחירים מלאה.</p>`
-    + q.map(r => `<div class="rq">
+  return `<p style="font-size:13px;margin:4px 0 8px">המנוע חושב שאלה אותו מוצר בכמה חנויות, אבל הפרש המחירים גדול מדי בשביל להיות בטוח — אז הוא מחכה לך. אם חנות אחת או מוצר אחד פשוט לא שייכים לכאן, אפשר להוציא אותם ב-"לא שייך" — הם יהפכו לשורה נפרדת משלהם, ומה שנשאר יעמוד לבד.</p>`
+    + q.map(r => {
+      const nDropped = dropsOf(r.id).size, live = liveEx(r), byShop = [];
+      live.forEach(e => { let g = byShop.find(x => x.s === e.s); if (!g) byShop.push(g = { s: e.s, items: [] }); g.items.push(e); });
+      const mins = byShop.map(g => Math.min(...g.items.map(x => x.p)));
+      const ratio = !nDropped ? r.r : (mins.length > 1 ? (Math.max(...mins) / Math.min(...mins)).toFixed(2) : null);
+      const shops = byShop.map(g => {
+        const okey = r.id + '|' + g.s, open = RQ_OPEN.has(okey) || g.items.length <= 3;
+        const show = open ? g.items : [g.items[0], g.items[g.items.length - 1]];
+        const lo = g.items[0].p, hi = g.items[g.items.length - 1].p;
+        return `<div class="rq-shop"><div style="flex:1;min-width:0">
+            <div class="st-t">${esc(STORES[g.s] ? STORES[g.s].n : g.s)}</div>
+            <div class="st-s">${g.items.length} ${g.items.length === 1 ? 'מוצר' : 'מוצרים'} · ${esc(lo === hi ? nis(lo) : nis(lo) + ' – ' + nis(hi))}</div>
+          </div><button type="button" class="btn ghost small" style="color:var(--rose)" data-dropshop="${esc(r.id)}" data-s="${esc(g.s)}">לא שייך</button></div>`
+          + show.map(e => `<div class="rq-li"><button type="button" class="rq-x" title="המוצר הזה לא שייך לשורה" data-drop="${esc(r.id)}" data-k="${esc(e.k)}">✕</button><span><b>${esc(nis(e.p))}</b> · ${e.u ? `<a href="${esc(e.u)}" target="_blank" rel="noopener">${esc(e.t)}</a>` : esc(e.t)}</span></div>`).join('')
+          + (open ? '' : `<button type="button" class="rq-more" data-more="${esc(okey)}">להציג את כל ${g.items.length} המוצרים</button>`);
+      }).join('');
+      return `<div class="rq">
       <div class="rq-head">${r.img ? `<img class="rq-pic" src="${esc(r.img)}" alt="" loading="lazy">` : ''}
         <div style="flex:1;min-width:0">
           <div class="st-t">${esc(r.n)}</div>
-          <div class="st-s">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)}${r.b ? ' · ' + esc(brandName(r.b) || r.b) : ''} · הפרש מחירים פי ${esc(r.r)}</div>
+          <div class="st-s">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)}${r.b ? ' · ' + esc(brandName(r.b) || r.b) : ''} · ${ratio ? 'הפרש מחירים פי ' + esc(ratio) : 'נשארה חנות אחת'}</div>
         </div></div>
-      <div class="rq-ex">${(r.ex || []).map(e => `<div><b>${esc(nis(e.p))}</b> · ${esc(STORES[e.s] ? STORES[e.s].n : e.s)} · ${e.u ? `<a href="${esc(e.u)}" target="_blank" rel="noopener">${esc(e.t)}</a>` : esc(e.t)}</div>`).join('')}</div>
+      <div class="rq-ex">${live.length ? shops : '<div>הוצאת את כל המוצרים מהשורה הזו — היא תיעלם בעדכון הלילי, והמוצרים יופיעו כשורות נפרדות.</div>'}</div>
+      ${nDropped ? `<div class="st-s" style="margin-top:7px">הוצאת ${nDropped} ${nDropped === 1 ? 'מוצר' : 'מוצרים'} מהשורה. ${nDropped === 1 ? 'הוא יהפוך' : 'הם יהפכו'} לשורה נפרדת בעדכון הלילי.</div>` : ''}
       <div class="row-btns" style="margin-top:9px">
-        <button type="button" class="btn primary small" data-rqyes="${esc(r.id)}">זה אותו מוצר</button>
+        <button type="button" class="btn primary small" data-rqyes="${esc(r.id)}"${live.length ? '' : ' disabled'}>זה אותו מוצר</button>
         <button type="button" class="btn soft small" data-rqno="${esc(r.id)}">אלה מוצרים שונים</button>
-      </div></div>`).join('');
+      </div></div>`;
+    }).join('');
+}
+function statusDrops(){
+  const ov = OVERRIDES.drop || {}, known = {};
+  ((ADMIN_DOC && ADMIN_DOC.drops) || []).forEach(d => { known[d.id + '\u0000' + d.k] = d; });
+  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  let n = 0, rows = '';
+  for (const id of Object.keys(ov)) for (const k of (ov[id] || [])) {
+    n++;
+    const d = known[id + '\u0000' + k], row = q.find(x => x.id === id);
+    const e = row && (row.ex || []).find(x => x.k === k);
+    const t = (d && d.t) || (e && e.t) || k, sid = (d && d.s) || (e && e.s) || k.split('|')[0];
+    const mn = (d && d.mn) || (row && row.n) || '';
+    rows += `<div class="st-row"><span class="st-dot">✕</span><div class="st-main">
+      <div class="st-t">${esc(t)}</div>
+      <div class="st-s">${esc(STORES[sid] ? STORES[sid].n : sid)}${mn ? ' · הוצא מהשורה "' + esc(mn) + '"' : ''}</div></div>
+      <button type="button" class="btn soft small" data-undrop="${esc(id)}" data-k="${esc(k)}">להחזיר</button></div>`;
+  }
+  return n ? `<div class="ttl" style="margin-top:18px">מוצרים שהוצאתי משורות (${n})</div>${rows}` : '';
+}
+async function ruleDrop(id, keys){
+  if (!keys || !keys.length) return;
+  const d = (OVERRIDES.drop = OVERRIDES.drop || {}), cur = new Set(d[id] || []);
+  keys.forEach(k => cur.add(k));
+  d[id] = Array.from(cur);
+  renderStatus();
+  toast((await saveOverrides())
+    ? `הוצאתי ${keys.length === 1 ? 'מוצר אחד' : keys.length + ' מוצרים'} מהשורה — ${keys.length === 1 ? 'הוא יעמוד' : 'הם יעמדו'} בנפרד מהעדכון הלילי`
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function undoDrop(id, k){
+  const d = OVERRIDES.drop || {};
+  d[id] = (d[id] || []).filter(x => x !== k);
+  if (!d[id].length) delete d[id];
+  if (!Object.keys(d).length) delete OVERRIDES.drop;
+  renderStatus();
+  toast((await saveOverrides()) ? 'חזר לשורה' : 'השמירה נכשלה — לנסות שוב');
 }
 function statusPairs(){
   const p = (ADMIN_DOC && ADMIN_DOC.pairs) || [];
@@ -760,6 +824,7 @@ function renderStatus(){
     <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}
     <div class="ttl" style="margin-top:18px">נראים כמו אותו מוצר${(ADMIN_DOC && ADMIN_DOC.pairs || []).length ? ` (${ADMIN_DOC.pairs.length})` : ''}</div>${statusPairs()}
     ${statusMerged()}
+    ${statusDrops()}
     <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>
     <div class="admin-hint">${built ? `הנתונים כאן מהפרסום של ${esc(whenHe(built))}. ` : ''}הכרעה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי.</div>`);
@@ -769,6 +834,10 @@ function renderStatus(){
   $$('[data-pyes]',  $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pyes, true));
   $$('[data-pno]',   $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pno,  false));
   $$('[data-unmerge]', $('#modal')).forEach(b => b.onclick = () => unmergePair(+b.dataset.unmerge));
+  $$('[data-drop]',     $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.drop, [b.dataset.k]));
+  $$('[data-dropshop]', $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.dropshop, shopKeys(b.dataset.dropshop, b.dataset.s)));
+  $$('[data-undrop]',   $('#modal')).forEach(b => b.onclick = () => undoDrop(b.dataset.undrop, b.dataset.k));
+  $$('[data-more]',     $('#modal')).forEach(b => b.onclick = () => { RQ_OPEN.add(b.dataset.more); renderStatus(); });
 }
 async function ruleReview(id, verdict){
   const row = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(r => r.id === id);
