@@ -628,6 +628,103 @@ function adminRemovedList(onlyItem){
   $$('[data-rback]', $('#modal')).forEach(b => b.onclick = () => { closeModal(); adminRestore(b.dataset.rback); });
   $$('[data-rview]', $('#modal')).forEach(b => b.onclick = () => { closeModal(); openModel(b.dataset.rview); });
 }
+/* ---------- מצב הכלי (מנהל) ----------
+   הכל במקום אחד: הריצות האחרונות (מתוך bl_health.json, שנכתב בכל ריצה — גם
+   כשהיא נופלת), מצב הסריקה של כל חנות, מה שממתין להכרעה ומה שנעלם מהחנויות
+   (מתוך bl_admin.json). הכפתורים שמתקנים כבר ממילא כאן, ולכן גם המסך כאן. */
+let ADMIN_DOC = null, HEALTH_DOC = null;
+const STEP_HE = {'offline-suite':'בדיקת המנוע', 'bundle-tests':'בדיקות החבילה',
+                 'live-refresh':'סריקת החנויות', 'publish':'הפרסום'};
+const whenHe = iso => {
+  const d = daysAgo(iso);
+  const t = new Date(iso).toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'});
+  return (d <= 0 ? 'היום' : d === 1 ? 'אתמול' : fmtDate(iso)) + ' ' + t;
+};
+async function loadAdminFiles(){
+  const get = async n => {
+    try { const r = await fetch(CONFIG.DATA_BASE + n + '?t=' + Date.now(), {cache:'no-store'});
+          return r.ok ? await r.json() : null; } catch(e) { return null; }
+  };
+  [ADMIN_DOC, HEALTH_DOC] = await Promise.all([get('bl_admin.json'), get('bl_health.json')]);
+}
+function adminStatus(){
+  openModal(`<h2>🛠 מצב הכלי</h2><p style="font-size:14px">טוען…</p>`);
+  loadAdminFiles().then(renderStatus);
+}
+function statusRuns(){
+  const runs = (HEALTH_DOC && HEALTH_DOC.runs) || [];
+  if (!runs.length) return '<p class="admin-hint">אין עדיין היסטוריית ריצות — היא נצברת מהרענון הבא.</p>';
+  const bad = runs.slice(0, 10).filter(r => !r.ok).length;
+  return (bad ? `<p style="font-size:13px;color:var(--rose);margin:4px 0 0">${bad} מתוך 10 הריצות האחרונות נכשלו.</p>`
+              : '<p style="font-size:13px;color:var(--sage);margin:4px 0 0">כל 10 הריצות האחרונות הצליחו.</p>')
+    + runs.slice(0, 10).map(r => `<div class="st-row"><span class="st-dot">${r.ok ? '✅' : '⚠️'}</span>
+      <div class="st-main"><div class="st-t">${esc(whenHe(r.at))}${r.trigger === 'schedule' ? ' · אוטומטי' : ' · הופעל ידנית'}</div>
+      ${r.ok
+        ? `<div class="st-s">${r.counts ? `${r.counts.models} מוצרים · ${r.counts.offers} מחירים` : 'פורסם'}</div>`
+        : `<div class="st-err">נפל ב${esc(STEP_HE[r.step] || r.step || 'שלב לא ידוע')} — ${esc(r.error || 'בלי פירוט')}</div>`}</div>
+      ${r.url ? `<a class="btn ghost small" href="${esc(r.url)}" target="_blank" rel="noopener">ללוג</a>` : ''}</div>`).join('');
+}
+function statusStores(){
+  return Object.values(STORES).map(s => {
+    const d = daysAgo(s.d);
+    const cls = s.hidden ? 'st-err' : (s.stale ? 'st-err' : 's-ok');
+    return `<div class="st-row"><span class="st-dot">${s.hidden ? '⚠️' : s.stale ? '🕓' : '✅'}</span>
+      <div class="st-main"><div class="st-t">${esc(s.n)}</div>
+      <div class="${cls === 's-ok' ? 'st-s' : 'st-err'}">${esc(fmtChecked(s.d))}${s.p ? ` · ${s.p} מוצרים` : ''}${
+        s.hidden ? ` — המחירים שלה כבר לא מוצגים` : s.stale ? ' — כדאי לסרוק' : ''}</div></div></div>`;
+  }).join('');
+}
+function statusQueue(){
+  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  if (!ADMIN_DOC) return '<p class="admin-hint">לא הצלחתי לטעון את קובץ הבדיקה.</p>';
+  if (!q.length) return '<p style="font-size:13px;margin:4px 0 0">אין דגמים שממתינים לך. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">המנוע חושב שאלה אותו מוצר בכמה חנויות, אבל הפרש המחירים גדול מדי בשביל להיות בטוח — אז הוא מחכה לך. אם זה באמת אותו מוצר, הוא ייצא לאוויר עם השוואת מחירים מלאה.</p>`
+    + q.map(r => `<div class="rq">
+      <div class="rq-head">${r.img ? `<img class="rq-pic" src="${esc(r.img)}" alt="" loading="lazy">` : ''}
+        <div style="flex:1;min-width:0">
+          <div class="st-t">${esc(r.n)}</div>
+          <div class="st-s">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)}${r.b ? ' · ' + esc(brandName(r.b) || r.b) : ''} · הפרש מחירים פי ${esc(r.r)}</div>
+        </div></div>
+      <div class="rq-ex">${(r.ex || []).map(e => `<div><b>${esc(nis(e.p))}</b> · ${esc(STORES[e.s] ? STORES[e.s].n : e.s)} · ${e.u ? `<a href="${esc(e.u)}" target="_blank" rel="noopener">${esc(e.t)}</a>` : esc(e.t)}</div>`).join('')}</div>
+      <div class="row-btns" style="margin-top:9px">
+        <button type="button" class="btn primary small" data-rqyes="${esc(r.id)}">זה אותו מוצר</button>
+        <button type="button" class="btn soft small" data-rqno="${esc(r.id)}">אלה מוצרים שונים</button>
+      </div></div>`).join('');
+}
+function statusGone(){
+  const g = (ADMIN_DOC && ADMIN_DOC.gone) || [];
+  if (!g.length) return '<p style="font-size:13px;margin:4px 0 0">שום מוצר לא נעלם מאז הפרסום הקודם. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">${g.length} מוצרים ירדו מהחנויות מאז הפרסום הקודם. הם כבר לא מוצגים לאף אחת — אבל אם מישהי כבר שמרה אחד מהם ברשימה שלה, כדאי שתדע.</p>`
+    + g.map(x => `<div class="st-row"><span class="st-dot">·</span><div class="st-main">
+      <div class="st-t">${esc(x.n)}</div>
+      <div class="st-s">${esc(itemById[x.i] ? itemById[x.i].n : 'פריט ' + x.i)}${x.b ? ' · ' + esc(brandName(x.b) || x.b) : ''}${x.lo != null ? ' · היה ' + esc(nis(x.lo)) : ''}</div>
+    </div></div>`).join('');
+}
+function renderStatus(){
+  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  const built = ADMIN_DOC && ADMIN_DOC.built;
+  openModal(`<h2>🛠 מצב הכלי</h2>
+    <div class="ttl" style="margin-top:12px">הריצות האחרונות</div>${statusRuns()}
+    <div class="ttl" style="margin-top:18px">החנויות</div>${statusStores()}
+    <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}
+    <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>
+    <div class="admin-hint">${built ? `הנתונים כאן מהפרסום של ${esc(whenHe(built))}. ` : ''}הכרעה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי.</div>`);
+  $('#stClose').onclick = closeModal;
+  $$('[data-rqyes]', $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqyes, 'same'));
+  $$('[data-rqno]',  $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqno,  'different'));
+}
+async function ruleReview(id, verdict){
+  const row = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(r => r.id === id);
+  const name = row ? row.n : 'המוצר';
+  (OVERRIDES.review = OVERRIDES.review || {})[id] = verdict;
+  if (ADMIN_DOC) ADMIN_DOC.review = ADMIN_DOC.review.filter(r => r.id !== id);
+  renderStatus();
+  toast((await saveOverrides())
+    ? (verdict === 'same' ? `"${name}" ייצא לאוויר בעדכון הלילי ✓` : `"${name}" לא יוצג — ולא יחזור לכאן`)
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+
 function adminBox(m){
   if (!IS_ADMIN) return '';
   const ov = ovOf(m.id);
@@ -788,9 +885,10 @@ function openManual(itemId, cat){
     <div class="field two"><div class="field"><label for="mfPrice">מחיר (₪)</label><input id="mfPrice" type="number" min="0" step="0.1" inputmode="decimal"></div><div class="field"><label for="mfQty">כמות</label><input id="mfQty" type="number" min="1" value="${it ? defaultQty(it) : 1}" inputmode="numeric"></div></div>
     <div class="field"><label for="mfUrl">קישור (לא חובה)</label><input id="mfUrl" type="url" dir="ltr" placeholder="https://"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>
-    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">🛠 מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button><button type="button" class="btn soft small" id="mfAdminRemoved">מוצרים שהסרתי</button></div></div>` : ''}`);
+    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">🛠 מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button><button type="button" class="btn soft small" id="mfAdminRemoved">מוצרים שהסרתי</button><button type="button" class="btn soft small" id="mfAdminStatus">מצב הכלי</button></div></div>` : ''}`);
   $('#mfAdminAll')?.addEventListener('click', () => { closeModal(); adminManualProducts(); });
   $('#mfAdminRemoved')?.addEventListener('click', () => { closeModal(); adminRemovedList(null); });
+  $('#mfAdminStatus')?.addEventListener('click', () => { closeModal(); adminStatus(); });
   if (!it) {
     const fillItems = () => { const c = $('#mfCat').value; $('#mfItem').innerHTML = `<option value="">פריט חדש — לא מהרשימה</option>` + ITEMS.filter(i => i.c === c).map(i => `<option value="${i.id}">${esc(i.n)}</option>`).join(''); $('#mfNameWrap').hidden = false; };
     fillItems();

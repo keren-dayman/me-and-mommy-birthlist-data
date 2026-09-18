@@ -83,6 +83,18 @@
 #bl .admin-box .ttl{font-weight:700;font-size:14px;margin-bottom:8px;color:var(--peach-ink)}
 #bl .admin-box .row-btns{display:flex;flex-wrap:wrap;gap:8px}
 #bl .admin-hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+#bl .st-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+#bl .st-row:last-child{border-bottom:0}
+#bl .st-dot{flex:0 0 auto;font-size:14px;line-height:1.5}
+#bl .st-main{flex:1;min-width:0}
+#bl .st-t{font-size:13px;font-weight:600}
+#bl .st-s{font-size:12px;color:var(--muted)}
+#bl .st-err{font-size:12px;color:var(--rose);word-break:break-word}
+#bl .rq{border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px;background:var(--surface)}
+#bl .rq-head{display:flex;gap:9px;align-items:flex-start}
+#bl .rq-pic{width:46px;height:46px;flex:0 0 auto;object-fit:contain;border-radius:8px;background:var(--surface-2)}
+#bl .rq-ex{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.5}
+#bl .rq-ex b{color:var(--ink);font-weight:600}
 #bl .adm-store{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
 #bl .mcard.dim{opacity:.55}
 #bl .mcard-x{position:absolute;top:4px;inset-inline-end:4px;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--surface-2);color:var(--rose);font-size:15px;line-height:1;box-shadow:var(--shadow);cursor:pointer;z-index:1}
