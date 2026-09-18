@@ -194,6 +194,9 @@ function prepareData(){
     if (ov.hide) { m.adminHidden = true; (hiddenByItem[m.i] = hiddenByItem[m.i] || []).push(m); continue; }
     if (modelsByItem[m.i]) { modelsByItem[m.i].push(m); MODELS.push(m); }
   }
+  // איחוד שורות: שורה שנבלעה בתוך אחרת משאירה כינוי. רשימה שנשמרה על השורה
+  // הישנה חייבת עדיין למצוא את המוצר — אחרת איחוד היה מרוקן למישהי את הרשימה.
+  for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (modelById[to]) modelById[from] = modelById[to];
   for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
   for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
 }
@@ -691,6 +694,54 @@ function statusQueue(){
         <button type="button" class="btn soft small" data-rqno="${esc(r.id)}">אלה מוצרים שונים</button>
       </div></div>`).join('');
 }
+function statusPairs(){
+  const p = (ADMIN_DOC && ADMIN_DOC.pairs) || [];
+  if (!ADMIN_DOC) return '';
+  if (!p.length) return '<p style="font-size:13px;margin:4px 0 0">אין הצעות חדשות. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">שני מוצרים שנראים כמו אותו דבר בשתי חנויות, שהמנוע לא חיבר לבד כי השמות שונים מדי. אם זה אותו מוצר — הם יתאחדו לשורה אחת עם השוואת מחיר, במקום להופיע פעמיים.</p>`
+    + p.map(r => `<div class="rq">
+      <div class="st-s" style="margin-bottom:6px">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)} · ${Math.round(r.score * 100)}% דומה</div>
+      ${[r.a, r.b].map(x => `<div class="rq-head" style="margin-bottom:6px">
+        ${x.img ? `<img class="rq-pic" src="${esc(x.img)}" alt="" loading="lazy">` : ''}
+        <div style="flex:1;min-width:0">
+          <div class="st-t">${x.u ? `<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a>` : esc(x.n)}</div>
+          <div class="st-s">${esc(STORES[x.s] ? STORES[x.s].n : x.s)} · ${esc(nis(x.p))}</div>
+        </div></div>`).join('')}
+      <div class="row-btns">
+        <button type="button" class="btn primary small" data-pyes="${esc(r.k)}">כן, לאחד</button>
+        <button type="button" class="btn soft small" data-pno="${esc(r.k)}">לא, מוצרים שונים</button>
+      </div></div>`).join('');
+}
+function statusMerged(){
+  const gs = OVERRIDES.merge || [];
+  if (!gs.length) return '';
+  return `<div class="ttl" style="margin-top:18px">מוצרים שאיחדת (${gs.length})</div>` + gs.map((g, idx) => {
+    const m = modelById[g[0]];
+    return `<div class="st-row"><span class="st-dot">🔗</span><div class="st-main">
+      <div class="st-t">${esc(m ? m.n : g[0])}</div>
+      <div class="st-s">${g.length} שורות אוחדו לשורה אחת</div></div>
+      <button type="button" class="btn soft small" data-unmerge="${idx}">לבטל</button></div>`;
+  }).join('');
+}
+async function rulePair(key, join){
+  const row = ((ADMIN_DOC && ADMIN_DOC.pairs) || []).find(r => r.k === key);
+  if (!row) return;
+  if (join) (OVERRIDES.merge = OVERRIDES.merge || []).push([row.a.id, row.b.id]);
+  else (OVERRIDES.notmerge = OVERRIDES.notmerge || []).push(key);
+  ADMIN_DOC.pairs = ADMIN_DOC.pairs.filter(r => r.k !== key);
+  renderStatus();
+  toast((await saveOverrides())
+    ? (join ? `יתאחדו לשורה אחת בעדכון הלילי ✓` : 'סומן כמוצרים שונים — לא יחזור לכאן')
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function unmergePair(idx){
+  const gs = OVERRIDES.merge || [];
+  if (!gs[idx]) return;
+  gs.splice(idx, 1);
+  if (!gs.length) delete OVERRIDES.merge;
+  renderStatus();
+  toast((await saveOverrides()) ? 'האיחוד בוטל — השורות ייפרדו שוב בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+}
 function statusGone(){
   const g = (ADMIN_DOC && ADMIN_DOC.gone) || [];
   if (!g.length) return '<p style="font-size:13px;margin:4px 0 0">שום מוצר לא נעלם מאז הפרסום הקודם. ✓</p>';
@@ -707,12 +758,17 @@ function renderStatus(){
     <div class="ttl" style="margin-top:12px">הריצות האחרונות</div>${statusRuns()}
     <div class="ttl" style="margin-top:18px">החנויות</div>${statusStores()}
     <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}
+    <div class="ttl" style="margin-top:18px">נראים כמו אותו מוצר${(ADMIN_DOC && ADMIN_DOC.pairs || []).length ? ` (${ADMIN_DOC.pairs.length})` : ''}</div>${statusPairs()}
+    ${statusMerged()}
     <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>
     <div class="admin-hint">${built ? `הנתונים כאן מהפרסום של ${esc(whenHe(built))}. ` : ''}הכרעה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי.</div>`);
   $('#stClose').onclick = closeModal;
   $$('[data-rqyes]', $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqyes, 'same'));
   $$('[data-rqno]',  $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqno,  'different'));
+  $$('[data-pyes]',  $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pyes, true));
+  $$('[data-pno]',   $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pno,  false));
+  $$('[data-unmerge]', $('#modal')).forEach(b => b.onclick = () => unmergePair(+b.dataset.unmerge));
 }
 async function ruleReview(id, verdict){
   const row = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(r => r.id === id);
