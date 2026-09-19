@@ -194,6 +194,9 @@ function prepareData(){
     if (ov.hide) { m.adminHidden = true; (hiddenByItem[m.i] = hiddenByItem[m.i] || []).push(m); continue; }
     if (modelsByItem[m.i]) { modelsByItem[m.i].push(m); MODELS.push(m); }
   }
+  // איחוד שורות: שורה שנבלעה בתוך אחרת משאירה כינוי. רשימה שנשמרה על השורה
+  // הישנה חייבת עדיין למצוא את המוצר — אחרת איחוד היה מרוקן למישהי את הרשימה.
+  for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (modelById[to]) modelById[from] = modelById[to];
   for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
   for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
 }
@@ -523,7 +526,7 @@ function openModels(itemId){
   renderModels();
 }
 function renderModels(){
-  const all = (modelsByItem[MS.item] || []).concat(IS_ADMIN ? (hiddenByItem[MS.item] || []) : []), byB = {}; all.forEach(m => { if (m.brand) byB[m.brand] = (byB[m.brand]||0) + 1; });
+  const all = (modelsByItem[MS.item] || []), byB = {}; all.forEach(m => { if (m.brand) byB[m.brand] = (byB[m.brand]||0) + 1; });
   const brands = Object.entries(byB).sort((a, b) => b[1] - a[1]).slice(0, 15);
   $('#msBrands').innerHTML = brands.length > 1 ? `<button type="button" class="chip" data-b="all" aria-pressed="${MS.brand==='all'}">כל המותגים<span class="n num">${all.length}</span></button>` + brands.map(([v, n]) => `<button type="button" class="chip" data-b="${esc(v)}" aria-pressed="${MS.brand===v}">${esc(v)}<span class="n num">${n}</span></button>`).join('') : '';
   $$('#msBrands .chip').forEach(b => b.onclick = () => { MS.brand = b.dataset.b; MS.page = 1; renderModels(); });
@@ -533,9 +536,19 @@ function renderModels(){
   const multi = all.filter(m => m.nStores > 1).length;
   $('#msSub').textContent = `${ms.length} מוצרים${brands.length > 1 ? ` · ${Object.keys(byB).length} מותגים` : ''}${multi ? ` · ${multi} בכמה חנויות` : ''}`;
   const shown = ms.slice(0, MS.page * CONFIG.MODELS_PAGE);
-  $('#msList').innerHTML = (shown.length ? `<div class="mgrid">${shown.map(m => `<button type="button" class="mcard${m.adminHidden ? ' dim' : ''}" data-m="${esc(m.id)}">${thumb(m.img, 'pic', true)}<span class="t">${esc(m.n)}</span>${m.adminHidden ? '<span class="v"><span class="unavail">מוסתר — רואות רק אותך</span></span>' : ''}<span class="v">${esc(m.brand || '')}${m.cl?.length ? `${m.brand ? ' · ' : ''}${m.cl.length} צבעים` : ''}${!m.best.a ? `${m.brand || m.cl?.length ? ' · ' : ''}<span class="unavail">לבדוק זמינות</span>` : ''}</span><span class="pl"><span class="p num">${modelPriceLabel(m)}</span><span class="s ${m.nStores>1?'multi':''}">${m.nStores > 1 ? `ב-${m.nStores} חנויות` : esc(STORES[m.best.sid].n)}</span></span></button>`).join('')}</div>` : `<p class="notice">לא נמצאו מוצרים לחיפוש הזה.</p>`)
-    + (ms.length > shown.length ? `<button type="button" class="more" id="msMore">להציג עוד ${Math.min(CONFIG.MODELS_PAGE, ms.length - shown.length)} מתוך ${ms.length - shown.length}</button>` : '');
+  $('#msList').innerHTML = (shown.length ? `<div class="mgrid">${shown.map(m => `<button type="button" class="mcard" data-m="${esc(m.id)}">${IS_ADMIN ? `<span class="mcard-x" title="להסיר את המוצר מכולן" data-mx="${esc(m.id)}">✕</span>` : ''}${thumb(m.img, 'pic', true)}<span class="t">${esc(m.n)}</span><span class="v">${esc(m.brand || '')}${m.cl?.length ? `${m.brand ? ' · ' : ''}${m.cl.length} צבעים` : ''}${!m.best.a ? `${m.brand || m.cl?.length ? ' · ' : ''}<span class="unavail">לבדוק זמינות</span>` : ''}</span><span class="pl"><span class="p num">${modelPriceLabel(m)}</span><span class="s ${m.nStores>1?'multi':''}">${m.nStores > 1 ? `ב-${m.nStores} חנויות` : esc(STORES[m.best.sid].n)}</span></span></button>`).join('')}</div>` : `<p class="notice">לא נמצאו מוצרים לחיפוש הזה.</p>`)
+    + (ms.length > shown.length ? `<button type="button" class="more" id="msMore">להציג עוד ${Math.min(CONFIG.MODELS_PAGE, ms.length - shown.length)} מתוך ${ms.length - shown.length}</button>` : '')
+    + (IS_ADMIN && (hiddenByItem[MS.item] || []).length ? `<p class="admin-hint">הסרת ${(hiddenByItem[MS.item] || []).length} מוצרים מהפריט הזה — הנשים לא רואות אותם. <button type="button" class="btn ghost small" id="msRemoved">לצפייה והחזרה</button></p>` : '');
   $$('#msList .mcard').forEach(b => b.onclick = () => openModel(b.dataset.m));
+  $('#msRemoved')?.addEventListener('click', () => adminRemovedList(MS.item));
+  // שתי הקשות: הראשונה מבקשת אישור, השנייה מסירה — כדי שהקשה בטעות בנייד לא תוריד מוצר.
+  $$('#msList [data-mx]').forEach(x => x.onclick = e => {
+    e.stopPropagation();
+    if (x.dataset.armed) { adminRemove(x.dataset.mx); return; }
+    $$('#msList [data-mx]').forEach(o => { delete o.dataset.armed; o.textContent = '✕'; o.classList.remove('armed'); });
+    x.dataset.armed = '1'; x.textContent = 'להסיר?'; x.classList.add('armed');
+    setTimeout(() => { if (x.dataset.armed) { delete x.dataset.armed; x.textContent = '✕'; x.classList.remove('armed'); } }, 3000);
+  });
   $('#msMore')?.addEventListener('click', () => { MS.page++; renderModels(); });
 }
 
@@ -561,7 +574,7 @@ function openModel(mid){
     $(`#cats .item[data-id="${it.id}"]`)?.scrollIntoView({block:'nearest'});
   });
   if (IS_ADMIN) {
-    $('[data-adm="hide"]', $('#sheet'))?.addEventListener('click', () => { closeSheet(); adminApply(m.id, {hide: m.adminHidden ? null : 1}, m.adminHidden ? 'המוצר הוחזר לכולן ✓' : 'המוצר הוסתר מכולן'); });
+    $('[data-adm="hide"]', $('#sheet'))?.addEventListener('click', () => { closeSheet(); (m.adminHidden ? adminRestore : adminRemove)(m.id); });
     $('[data-adm="rename"]', $('#sheet'))?.addEventListener('click', () => adminRename(m));
     $('[data-adm="move"]', $('#sheet'))?.addEventListener('click', () => adminMove(m));
     $('[data-adm="img"]', $('#sheet'))?.addEventListener('click', () => adminImage(m));
@@ -577,6 +590,302 @@ function isShopifyImg(v){
   return /^https:\/\/cdn\.shopify\.com\//.test(v) || /^https:\/\/[^/]+\/cdn\/shop\/(files|products)\//.test(v);
 }
 /* ---------- מסכי העריכה של המנהל ---------- */
+/* ---------- הסרת מוצר (מנהל) ----------
+   אי אפשר למחוק מוצר מהחנות עצמה — הסריקה הלילית מוצאת אותו שוב בכל פעם.
+   ההסרה כאן היא רשומת תיקון קבועה: build_bundle משמיט את המוצר מהקובץ
+   המתפרסם, כך שאף אישה לא רואה אותו — לא היום ולא אחרי סריקות הבאות.
+   הרשימה המרכזית למטה היא המקום היחיד שבו הוא עדיין קיים, וממנה מחזירים. */
+function refreshGallery(){ if (!$('#sheetBg').hidden && $('#msList') && MS.item) renderModels(); }
+function adminRemove(mid){
+  const m = modelById[mid]; if (!m) return;
+  adminApply(mid, {hide: 1}, `"${m.n}" הוסר — הנשים כבר לא רואות אותו`);
+  refreshGallery();
+}
+function adminRestore(mid){
+  const m = modelById[mid]; if (!m) return;
+  adminApply(mid, {hide: null}, `"${m.n}" הוחזר ✓`);
+  refreshGallery();
+}
+function adminRemovedList(onlyItem){
+  const groups = {};
+  for (const [iid, list] of Object.entries(hiddenByItem)) {
+    if (onlyItem && +iid !== +onlyItem) continue;
+    if (list.length) groups[iid] = list;
+  }
+  const ids = Object.keys(groups).sort((a, b) => ((itemById[a] || {}).n || '').localeCompare(((itemById[b] || {}).n || ''), 'he'));
+  const total = ids.reduce((n, iid) => n + groups[iid].length, 0);
+  const body = ids.map(iid => `<div class="ttl" style="margin-top:14px">${esc((itemById[iid] || {}).n || ('פריט ' + iid))}</div>` +
+    groups[iid].map(m => `<div class="adm-store" style="flex-wrap:wrap"><div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600">${esc(m.n)}</div>
+      <div style="font-size:12px;color:var(--muted)">${esc(m.brand || '')}${m.brand ? ' · ' : ''}${esc(STORES[m.best.sid] ? STORES[m.best.sid].n : m.best.sid)} · ${esc(modelPriceLabel(m))}</div></div>
+      <button type="button" class="btn ghost small" data-rview="${esc(m.id)}">לצפייה</button>
+      <button type="button" class="btn soft small" data-rback="${esc(m.id)}">להחזיר</button></div>`).join('')).join('');
+  openModal(`<h2>🛠 מוצרים שהסרתי</h2>
+    <p style="font-size:14px">${total
+      ? `${total} מוצרים שהסרת${onlyItem ? ' מהפריט הזה' : ''}. הם מושמטים לגמרי מהקובץ שהנשים רואות — אפשר להחזיר כל אחד מהם מכאן.`
+      : 'עוד לא הסרת אף מוצר.'}</p>${body}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">${onlyItem ? '<button type="button" class="btn ghost small" id="rmAll">כל הפריטים</button>' : ''}<button type="button" class="btn soft" id="rmClose">סגירה</button></div>
+    <div class="admin-hint">ההסרה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי. היא נשארת בתוקף גם אחרי סריקות הבאות — הסריקה תמצא את המוצר שוב בחנות, וההסרה הזו היא שמשאירה אותו בחוץ.</div>`);
+  $('#rmClose').onclick = closeModal;
+  $('#rmAll')?.addEventListener('click', () => adminRemovedList(null));
+  $$('[data-rback]', $('#modal')).forEach(b => b.onclick = () => { closeModal(); adminRestore(b.dataset.rback); });
+  $$('[data-rview]', $('#modal')).forEach(b => b.onclick = () => { closeModal(); openModel(b.dataset.rview); });
+}
+/* ---------- מצב הכלי (מנהל) ----------
+   הכל במקום אחד: הריצות האחרונות (מתוך bl_health.json, שנכתב בכל ריצה — גם
+   כשהיא נופלת), מצב הסריקה של כל חנות, מה שממתין להכרעה ומה שנעלם מהחנויות
+   (מתוך bl_admin.json). הכפתורים שמתקנים כבר ממילא כאן, ולכן גם המסך כאן. */
+let ADMIN_DOC = null, HEALTH_DOC = null;
+const STEP_HE = {'offline-suite':'בדיקת המנוע', 'bundle-tests':'בדיקות החבילה',
+                 'live-refresh':'סריקת החנויות', 'publish':'הפרסום'};
+const whenHe = iso => {
+  const d = daysAgo(iso);
+  const t = new Date(iso).toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'});
+  return (d <= 0 ? 'היום' : d === 1 ? 'אתמול' : fmtDate(iso)) + ' ' + t;
+};
+async function loadAdminFiles(){
+  const get = async n => {
+    try { const r = await fetch(CONFIG.DATA_BASE + n + '?t=' + Date.now(), {cache:'no-store'});
+          return r.ok ? await r.json() : null; } catch(e) { return null; }
+  };
+  [ADMIN_DOC, HEALTH_DOC] = await Promise.all([get('bl_admin.json'), get('bl_health.json')]);
+}
+function adminStatus(){
+  openModal(`<h2>🛠 מצב הכלי</h2><p style="font-size:14px">טוען…</p>`);
+  loadAdminFiles().then(renderStatus);
+}
+function statusRuns(){
+  const runs = (HEALTH_DOC && HEALTH_DOC.runs) || [];
+  if (!runs.length) return '<p class="admin-hint">אין עדיין היסטוריית ריצות — היא נצברת מהרענון הבא.</p>';
+  const bad = runs.slice(0, 10).filter(r => !r.ok).length;
+  return (bad ? `<p style="font-size:13px;color:var(--rose);margin:4px 0 0">${bad} מתוך 10 הריצות האחרונות נכשלו.</p>`
+              : '<p style="font-size:13px;color:var(--sage);margin:4px 0 0">כל 10 הריצות האחרונות הצליחו.</p>')
+    + runs.slice(0, 10).map(r => `<div class="st-row"><span class="st-dot">${r.ok ? '✅' : '⚠️'}</span>
+      <div class="st-main"><div class="st-t">${esc(whenHe(r.at))}${r.trigger === 'schedule' ? ' · אוטומטי' : ' · הופעל ידנית'}</div>
+      ${r.ok
+        ? `<div class="st-s">${r.counts ? `${r.counts.models} מוצרים · ${r.counts.offers} מחירים` : 'פורסם'}</div>`
+        : `<div class="st-err">נפל ב${esc(STEP_HE[r.step] || r.step || 'שלב לא ידוע')} — ${esc(r.error || 'בלי פירוט')}</div>`}</div>
+      ${r.url ? `<a class="btn ghost small" href="${esc(r.url)}" target="_blank" rel="noopener">ללוג</a>` : ''}</div>`).join('');
+}
+function statusStores(){
+  return Object.values(STORES).map(s => {
+    const d = daysAgo(s.d);
+    const cls = s.hidden ? 'st-err' : (s.stale ? 'st-err' : 's-ok');
+    return `<div class="st-row"><span class="st-dot">${s.hidden ? '⚠️' : s.stale ? '🕓' : '✅'}</span>
+      <div class="st-main"><div class="st-t">${esc(s.n)}</div>
+      <div class="${cls === 's-ok' ? 'st-s' : 'st-err'}">${esc(fmtChecked(s.d))}${s.p ? ` · ${s.p} מוצרים` : ''}${
+        s.hidden ? ` — המחירים שלה כבר לא מוצגים` : s.stale ? ' — כדאי לסרוק' : ''}</div></div></div>`;
+  }).join('');
+}
+// Shops whose full listing Daniel asked to see. A row can hold 50 listings, so each
+// shop shows its two ends until he opens it. Deliberately not persisted: it is a
+// glance, not a decision.
+const RQ_OPEN = new Set();
+function dropsOf(id){ return new Set(((OVERRIDES.drop || {})[id]) || []); }
+function liveEx(r){ const d = dropsOf(r.id); return (r.ex || []).filter(e => !d.has(e.k)); }
+function shopKeys(id, sid){
+  const r = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(x => x.id === id);
+  return r ? liveEx(r).filter(e => e.s === sid).map(e => e.k) : [];
+}
+// A decision is saved the moment it is made, but bl_admin.json is rebuilt once a night,
+// so until then it still lists rows he has already answered. Reading that list without
+// reading his answers is why a ruled row came back every time he reopened the screen
+// (19.9). These two are the only doors the screen reads the queue through.
+function openReview(){
+  const done = OVERRIDES.review || {};
+  return ((ADMIN_DOC && ADMIN_DOC.review) || []).filter(r => !done[r.id]);
+}
+function openPairs(){
+  const no = new Set(OVERRIDES.notmerge || []), joined = new Set();
+  (OVERRIDES.merge || []).forEach(g => g.forEach(id => joined.add(id)));
+  return ((ADMIN_DOC && ADMIN_DOC.pairs) || [])
+    .filter(r => !no.has(r.k) && !joined.has(r.a.id) && !joined.has(r.b.id));
+}
+function statusQueue(){
+  const q = openReview();
+  if (!ADMIN_DOC) return '<p class="admin-hint">לא הצלחתי לטעון את קובץ הבדיקה.</p>';
+  if (!q.length) return '<p style="font-size:13px;margin:4px 0 0">אין דגמים שממתינים לך. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">המנוע חושב שאלה אותו מוצר בכמה חנויות, אבל הפרש המחירים גדול מדי בשביל להיות בטוח — אז הוא מחכה לך. אם חנות אחת או מוצר אחד פשוט לא שייכים לכאן, אפשר להוציא אותם ב-"לא שייך" — הם יהפכו לשורה נפרדת משלהם, ומה שנשאר יעמוד לבד.</p>`
+    + q.map(r => {
+      const nDropped = dropsOf(r.id).size, live = liveEx(r), byShop = [];
+      live.forEach(e => { let g = byShop.find(x => x.s === e.s); if (!g) byShop.push(g = { s: e.s, items: [] }); g.items.push(e); });
+      const mins = byShop.map(g => Math.min(...g.items.map(x => x.p)));
+      const ratio = !nDropped ? r.r : (mins.length > 1 ? (Math.max(...mins) / Math.min(...mins)).toFixed(2) : null);
+      const shops = byShop.map(g => {
+        const okey = r.id + '|' + g.s, open = RQ_OPEN.has(okey) || g.items.length <= 3;
+        const show = open ? g.items : [g.items[0], g.items[g.items.length - 1]];
+        const lo = g.items[0].p, hi = g.items[g.items.length - 1].p;
+        return `<div class="rq-shop"><div style="flex:1;min-width:0">
+            <div class="st-t">${esc(STORES[g.s] ? STORES[g.s].n : g.s)}</div>
+            <div class="st-s">${g.items.length} ${g.items.length === 1 ? 'מוצר' : 'מוצרים'} · ${esc(lo === hi ? nis(lo) : nis(lo) + ' – ' + nis(hi))}</div>
+          </div><button type="button" class="btn ghost small" style="color:var(--rose)" data-dropshop="${esc(r.id)}" data-s="${esc(g.s)}">לא שייך</button></div>`
+          + show.map(e => `<div class="rq-li"><button type="button" class="rq-x" title="המוצר הזה לא שייך לשורה" data-drop="${esc(r.id)}" data-k="${esc(e.k)}">✕</button><span><b>${esc(nis(e.p))}</b> · ${e.u ? `<a href="${esc(e.u)}" target="_blank" rel="noopener">${esc(e.t)}</a>` : esc(e.t)}</span></div>`).join('')
+          + (open ? '' : `<button type="button" class="rq-more" data-more="${esc(okey)}">להציג את כל ${g.items.length} המוצרים</button>`);
+      }).join('');
+      return `<div class="rq">
+      <div class="rq-head">${r.img ? `<img class="rq-pic" src="${esc(r.img)}" alt="" loading="lazy">` : ''}
+        <div style="flex:1;min-width:0">
+          <div class="st-t">${esc(r.n)}</div>
+          <div class="st-s">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)}${r.b ? ' · ' + esc(brandName(r.b) || r.b) : ''} · ${ratio ? 'הפרש מחירים פי ' + esc(ratio) : 'נשארה חנות אחת'}</div>
+        </div></div>
+      <div class="rq-ex">${live.length ? shops : '<div>הוצאת את כל המוצרים מהשורה הזו — היא תיעלם בעדכון הלילי, והמוצרים יופיעו כשורות נפרדות.</div>'}</div>
+      ${nDropped ? `<div class="st-s" style="margin-top:7px">הוצאת ${nDropped} ${nDropped === 1 ? 'מוצר' : 'מוצרים'} מהשורה. ${nDropped === 1 ? 'הוא יהפוך' : 'הם יהפכו'} לשורה נפרדת בעדכון הלילי.</div>` : ''}
+      <div class="row-btns" style="margin-top:9px">
+        <button type="button" class="btn primary small" data-rqyes="${esc(r.id)}"${live.length ? '' : ' disabled'}>זה אותו מוצר</button>
+        <button type="button" class="btn soft small" data-rqno="${esc(r.id)}">אלה מוצרים שונים</button>
+      </div></div>`;
+    }).join('');
+}
+function statusDrops(){
+  const ov = OVERRIDES.drop || {}, known = {};
+  ((ADMIN_DOC && ADMIN_DOC.drops) || []).forEach(d => { known[d.id + '\u0000' + d.k] = d; });
+  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  let n = 0, rows = '';
+  for (const id of Object.keys(ov)) for (const k of (ov[id] || [])) {
+    n++;
+    const d = known[id + '\u0000' + k], row = q.find(x => x.id === id);
+    const e = row && (row.ex || []).find(x => x.k === k);
+    const t = (d && d.t) || (e && e.t) || k, sid = (d && d.s) || (e && e.s) || k.split('|')[0];
+    const mn = (d && d.mn) || (row && row.n) || '';
+    rows += `<div class="st-row"><span class="st-dot">✕</span><div class="st-main">
+      <div class="st-t">${esc(t)}</div>
+      <div class="st-s">${esc(STORES[sid] ? STORES[sid].n : sid)}${mn ? ' · הוצא מהשורה "' + esc(mn) + '"' : ''}</div></div>
+      <button type="button" class="btn soft small" data-undrop="${esc(id)}" data-k="${esc(k)}">להחזיר</button></div>`;
+  }
+  return n ? `<div class="ttl" style="margin-top:18px">מוצרים שהוצאתי משורות (${n})</div>${rows}` : '';
+}
+async function ruleDrop(id, keys){
+  if (!keys || !keys.length) return;
+  const d = (OVERRIDES.drop = OVERRIDES.drop || {}), cur = new Set(d[id] || []);
+  keys.forEach(k => cur.add(k));
+  d[id] = Array.from(cur);
+  renderStatus();
+  toast((await saveOverrides())
+    ? `הוצאתי ${keys.length === 1 ? 'מוצר אחד' : keys.length + ' מוצרים'} מהשורה — ${keys.length === 1 ? 'הוא יעמוד' : 'הם יעמדו'} בנפרד מהעדכון הלילי`
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function undoDrop(id, k){
+  const d = OVERRIDES.drop || {};
+  d[id] = (d[id] || []).filter(x => x !== k);
+  if (!d[id].length) delete d[id];
+  if (!Object.keys(d).length) delete OVERRIDES.drop;
+  renderStatus();
+  toast((await saveOverrides()) ? 'חזר לשורה' : 'השמירה נכשלה — לנסות שוב');
+}
+function statusPairs(){
+  const p = openPairs();
+  if (!ADMIN_DOC) return '';
+  if (!p.length) return '<p style="font-size:13px;margin:4px 0 0">אין הצעות חדשות. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">שני מוצרים שנראים כמו אותו דבר בשתי חנויות, שהמנוע לא חיבר לבד כי השמות שונים מדי. אם זה אותו מוצר — הם יתאחדו לשורה אחת עם השוואת מחיר, במקום להופיע פעמיים.</p>`
+    + p.map(r => `<div class="rq">
+      <div class="st-s" style="margin-bottom:6px">${esc(itemById[r.i] ? itemById[r.i].n : 'פריט ' + r.i)} · ${Math.round(r.score * 100)}% דומה</div>
+      ${[r.a, r.b].map(x => `<div class="rq-head" style="margin-bottom:6px">
+        ${x.img ? `<img class="rq-pic" src="${esc(x.img)}" alt="" loading="lazy">` : ''}
+        <div style="flex:1;min-width:0">
+          <div class="st-t">${x.u ? `<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a>` : esc(x.n)}</div>
+          <div class="st-s">${esc(STORES[x.s] ? STORES[x.s].n : x.s)} · ${esc(nis(x.p))}</div>
+        </div></div>`).join('')}
+      <div class="row-btns">
+        <button type="button" class="btn primary small" data-pyes="${esc(r.k)}">כן, לאחד</button>
+        <button type="button" class="btn soft small" data-pno="${esc(r.k)}">לא, מוצרים שונים</button>
+      </div></div>`).join('');
+}
+function statusMerged(){
+  const gs = OVERRIDES.merge || [];
+  if (!gs.length) return '';
+  return `<div class="ttl" style="margin-top:18px">מוצרים שאיחדת (${gs.length})</div>` + gs.map((g, idx) => {
+    const m = modelById[g[0]];
+    return `<div class="st-row"><span class="st-dot">🔗</span><div class="st-main">
+      <div class="st-t">${esc(m ? m.n : g[0])}</div>
+      <div class="st-s">${g.length} שורות אוחדו לשורה אחת</div></div>
+      <button type="button" class="btn soft small" data-unmerge="${idx}">לבטל</button></div>`;
+  }).join('');
+}
+async function rulePair(key, join){
+  const row = ((ADMIN_DOC && ADMIN_DOC.pairs) || []).find(r => r.k === key);
+  if (!row) return;
+  if (join) (OVERRIDES.merge = OVERRIDES.merge || []).push([row.a.id, row.b.id]);
+  else (OVERRIDES.notmerge = OVERRIDES.notmerge || []).push(key);
+  renderStatus();          // openPairs() hides it from here on -- and shows it again if he undoes the merge
+  toast((await saveOverrides())
+    ? (join ? `יתאחדו לשורה אחת בעדכון הלילי ✓` : 'סומן כמוצרים שונים — לא יחזור לכאן')
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function unmergePair(idx){
+  const gs = OVERRIDES.merge || [];
+  if (!gs[idx]) return;
+  gs.splice(idx, 1);
+  if (!gs.length) delete OVERRIDES.merge;
+  renderStatus();
+  toast((await saveOverrides()) ? 'האיחוד בוטל — השורות ייפרדו שוב בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+}
+function statusGone(){
+  const g = (ADMIN_DOC && ADMIN_DOC.gone) || [];
+  if (!g.length) return '<p style="font-size:13px;margin:4px 0 0">שום מוצר לא נעלם מאז הפרסום הקודם. ✓</p>';
+  return `<p style="font-size:13px;margin:4px 0 8px">${g.length} מוצרים ירדו מהחנויות מאז הפרסום הקודם. הם כבר לא מוצגים לאף אחת — אבל אם מישהי כבר שמרה אחד מהם ברשימה שלה, כדאי שתדע.</p>`
+    + g.map(x => `<div class="st-row"><span class="st-dot">·</span><div class="st-main">
+      <div class="st-t">${esc(x.n)}</div>
+      <div class="st-s">${esc(itemById[x.i] ? itemById[x.i].n : 'פריט ' + x.i)}${x.b ? ' · ' + esc(brandName(x.b) || x.b) : ''}${x.lo != null ? ' · היה ' + esc(nis(x.lo)) : ''}</div>
+    </div></div>`).join('');
+}
+// Every answer he has given, with a way back. An answered row simply leaves the queue,
+// so without this a mis-tap would be invisible as well as permanent.
+function statusRuled(){
+  const done = OVERRIDES.review || {}, ids = Object.keys(done);
+  if (!ids.length) return '';
+  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  return `<div class="ttl" style="margin-top:18px">הכרעות שקיבלת (${ids.length})</div>` + ids.map(id => {
+    const row = q.find(x => x.id === id), m = modelById[id], same = done[id] === 'same';
+    return `<div class="st-row"><span class="st-dot">${same ? '✓' : '✕'}</span><div class="st-main">
+      <div class="st-t">${esc((row && row.n) || (m && m.n) || id)}</div>
+      <div class="st-s">${same ? 'אישרת — מוצג לכולן' : 'סימנת כמוצרים שונים — לא מוצג'}</div></div>
+      <button type="button" class="btn soft small" data-unrule="${esc(id)}">לבטל</button></div>`;
+  }).join('');
+}
+async function undoRule(id){
+  const done = OVERRIDES.review || {};
+  delete done[id];
+  if (!Object.keys(done).length) delete OVERRIDES.review;
+  renderStatus();
+  toast((await saveOverrides()) ? 'ההכרעה בוטלה — השורה חזרה להמתנה' : 'השמירה נכשלה — לנסות שוב');
+}
+function renderStatus(){
+  const q = openReview();
+  const p = openPairs();
+  const built = ADMIN_DOC && ADMIN_DOC.built;
+  openModal(`<h2>🛠 מצב הכלי</h2>
+    <div class="ttl" style="margin-top:12px">הריצות האחרונות</div>${statusRuns()}
+    <div class="ttl" style="margin-top:18px">החנויות</div>${statusStores()}
+    <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}
+    <div class="ttl" style="margin-top:18px">נראים כמו אותו מוצר${p.length ? ` (${p.length})` : ''}</div>${statusPairs()}
+    ${statusRuled()}
+    ${statusMerged()}
+    ${statusDrops()}
+    <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>
+    <div class="admin-hint">${built ? `הנתונים כאן מהפרסום של ${esc(whenHe(built))}. ` : ''}הכרעה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי.</div>`);
+  $('#stClose').onclick = closeModal;
+  $$('[data-rqyes]', $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqyes, 'same'));
+  $$('[data-rqno]',  $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqno,  'different'));
+  $$('[data-pyes]',  $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pyes, true));
+  $$('[data-pno]',   $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pno,  false));
+  $$('[data-unrule]',  $('#modal')).forEach(b => b.onclick = () => undoRule(b.dataset.unrule));
+  $$('[data-unmerge]', $('#modal')).forEach(b => b.onclick = () => unmergePair(+b.dataset.unmerge));
+  $$('[data-drop]',     $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.drop, [b.dataset.k]));
+  $$('[data-dropshop]', $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.dropshop, shopKeys(b.dataset.dropshop, b.dataset.s)));
+  $$('[data-undrop]',   $('#modal')).forEach(b => b.onclick = () => undoDrop(b.dataset.undrop, b.dataset.k));
+  $$('[data-more]',     $('#modal')).forEach(b => b.onclick = () => { RQ_OPEN.add(b.dataset.more); renderStatus(); });
+}
+async function ruleReview(id, verdict){
+  const row = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(r => r.id === id);
+  const name = row ? row.n : 'המוצר';
+  (OVERRIDES.review = OVERRIDES.review || {})[id] = verdict;
+  renderStatus();          // openReview() hides it from here on, and the row stays so the undo list can name it
+  toast((await saveOverrides())
+    ? (verdict === 'same' ? `"${name}" ייצא לאוויר בעדכון הלילי ✓` : `"${name}" לא יוצג — ולא יחזור לכאן`)
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+
 function adminBox(m){
   if (!IS_ADMIN) return '';
   const ov = ovOf(m.id);
@@ -584,7 +893,7 @@ function adminBox(m){
   const restoreRows = (ov.hs || []).map(sid => `<div class="adm-store"><span style="font-size:13px">${esc(STORES[sid] ? STORES[sid].n : sid)} — הוסתרה</span><button type="button" class="btn soft small" data-admrs="${esc(sid)}">להחזיר</button></div>`).join('');
   return `<div class="admin-box"><div class="ttl">🛠 עריכת מנהל — משפיע על כל הנשים</div>
     <div class="row-btns">
-      <button type="button" class="btn ${m.adminHidden ? 'primary' : 'soft'} small" data-adm="hide">${m.adminHidden ? 'להחזיר את המוצר' : 'להסתיר את המוצר'}</button>
+      <button type="button" class="btn ${m.adminHidden ? 'primary' : 'soft'} small" data-adm="hide">${m.adminHidden ? 'להחזיר את המוצר' : 'להסיר את המוצר'}</button>
       <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
       <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
       <button type="button" class="btn soft small" data-adm="img">החלפת תמונה</button>
@@ -737,8 +1046,10 @@ function openManual(itemId, cat){
     <div class="field two"><div class="field"><label for="mfPrice">מחיר (₪)</label><input id="mfPrice" type="number" min="0" step="0.1" inputmode="decimal"></div><div class="field"><label for="mfQty">כמות</label><input id="mfQty" type="number" min="1" value="${it ? defaultQty(it) : 1}" inputmode="numeric"></div></div>
     <div class="field"><label for="mfUrl">קישור (לא חובה)</label><input id="mfUrl" type="url" dir="ltr" placeholder="https://"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>
-    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">🛠 מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button></div></div>` : ''}`);
+    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">🛠 מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button><button type="button" class="btn soft small" id="mfAdminRemoved">מוצרים שהסרתי</button><button type="button" class="btn soft small" id="mfAdminStatus">מצב הכלי</button></div></div>` : ''}`);
   $('#mfAdminAll')?.addEventListener('click', () => { closeModal(); adminManualProducts(); });
+  $('#mfAdminRemoved')?.addEventListener('click', () => { closeModal(); adminRemovedList(null); });
+  $('#mfAdminStatus')?.addEventListener('click', () => { closeModal(); adminStatus(); });
   if (!it) {
     const fillItems = () => { const c = $('#mfCat').value; $('#mfItem').innerHTML = `<option value="">פריט חדש — לא מהרשימה</option>` + ITEMS.filter(i => i.c === c).map(i => `<option value="${i.id}">${esc(i.n)}</option>`).join(''); $('#mfNameWrap').hidden = false; };
     fillItems();
