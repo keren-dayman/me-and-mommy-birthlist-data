@@ -6,7 +6,7 @@
    ===================================================================== */
 const CONFIG = {
   // 🔑 כתובת הנתונים — הקבוע היחיד. מעבר ל-Cloudflare = שינוי השורה הזו בלבד.
-  DATA_BASE: 'https://keren-dayman.github.io/me-and-mommy-birthlist-data/',
+  DATA_BASE: 'https://pub-16b109ac2c064d7cb1eda50bf0354d78.r2.dev/',
   // תמונות מוצרים — מתג אחד לכולם. אין מתג למשתמשים.
   SHOW_IMAGES: true,
   // מחיר שנבדק לפני יותר מ-X ימים: מ-WARN מציגים אזהרה, מ-HIDE לא מציגים בכלל.
@@ -354,26 +354,26 @@ function enterApp(){
   if (hidden.length) parts.push(`המחירים של ${hidden.map(s => s.n).join(', ')} לא מוצגים — לא נבדקו יותר מ-${CONFIG.STALE_HIDE_DAYS} יום.`);
   if (stale.length) parts.push(`חלק מהמחירים נבדקו לפני ${Math.max(...stale.map(s => s.days))} ימים — כדאי לוודא בחנות לפני קנייה.`);
   sb.hidden = !parts.length; sb.textContent = parts.join(' ');
-  $('#footNote').innerHTML = `המחירים נבדקו בחנויות: ${Object.values(STORES).filter(s => !s.hidden).map(s => `${esc(s.n)} ${fmtDate(s.d)}`).join(' · ')}.<br>מזהה גרסה: ${VERSION.v}. המחיר הסופי הוא תמיד המחיר באתר החנות.`;
+  $('#footNote').innerHTML = `מזהה גרסה: ${VERSION.v}. המחיר הסופי הוא תמיד המחיר באתר החנות.`;
   renderAll();
 }
 function renderAll(){ renderList(); showView(UI.view); }
-function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') renderBudget(); if (v === 'months') renderMonths(); if (v === 'gifts') renderGifts(); window.scrollTo({top:0}); }
+function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') renderBudget(); if (v === 'months') renderMonths(); if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(renderGifts); } window.scrollTo({top:0}); }
 $$('#tabs [role=tab]').forEach(b => b.onclick = () => showView(b.dataset.view));
 $('#fabAdd').onclick = () => openManual(null);
 
 /* ---------- שורות הרשימה (כל מה שנבחר, מכל הסוגים) ---------- */
-function lines(){
+function lines(st = S){
   const out = [];
-  for (const [iid, picks] of Object.entries(S.sel)) {
-    const it = itemById[iid]; if (!it || S.have[iid]) continue;
+  for (const [iid, picks] of Object.entries(st.sel)) {
+    const it = itemById[iid]; if (!it || st.have[iid]) continue;
     for (const p of picks) {
       const m = modelById[p.m]; const o = m && m.offers.find(x => x.sid === p.s);
       if (!m || !o) { out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:p.name || it.n, store:p.sname || '', price:0, qty:p.q || 1, who:p.who || 'me', missing:true, model:null}); continue; }
       out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:m.n, brand:m.brand, store:STORES[o.sid].n, sid:o.sid, price:(p.pp != null ? +p.pp : o.p), storeP:o.p, personal:p.pp != null, px:o.px, qty:p.q || 1, who:p.who || 'me', model:m, offer:o, url:o.u, img:m.img});
     }
   }
-  for (const c of S.custom) { const it = c.i ? itemById[c.i] : null; if (it && S.have[it.id]) continue; out.push({key:'c' + c.id, custom:c, itemId:c.i || null, item:it, cat:it ? it.c : c.c, name:c.name, store:c.store || 'חנות אחרת', price:+c.price || 0, qty:c.q || 1, who:c.who || 'me', url:c.url, model:null}); }
+  for (const c of st.custom) { const it = c.i ? itemById[c.i] : null; if (it && st.have[it.id]) continue; out.push({key:'c' + c.id, custom:c, itemId:c.i || null, item:it, cat:it ? it.c : c.c, name:c.name, store:c.store || 'חנות אחרת', price:+c.price || 0, qty:c.q || 1, who:c.who || 'me', url:c.url, model:null}); }
   return out;
 }
 const total = ls => ls.reduce((a, l) => a + l.price * l.qty, 0);
@@ -581,6 +581,8 @@ function openModel(mid){
     $$('[data-admhs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = [...(ovOf(m.id).hs || []), b.dataset.admhs]; closeSheet(); adminApply(m.id, {hs}, 'החנות הוסתרה מהמוצר הזה'); });
     $$('[data-admrs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = (ovOf(m.id).hs || []).filter(s => s !== b.dataset.admrs); closeSheet(); adminApply(m.id, {hs}, 'החנות הוחזרה ✓'); });
     $$('[data-admurl]', $('#sheet')).forEach(b => b.onclick = () => adminEditUrl(m, b.dataset.admurl));
+    $$('[data-admsplit]',   $('#sheet')).forEach(b => b.onclick = () => adminSplit(m, b.dataset.admsplit));
+    $$('[data-admunsplit]', $('#sheet')).forEach(b => b.onclick = () => adminUnsplit(m, b.dataset.admunsplit));
   }
 }
 
@@ -754,23 +756,48 @@ function statusDrops(){
   }
   return n ? `<div class="ttl" style="margin-top:18px">מוצרים שהוצאתי משורות (${n})</div>${rows}` : '';
 }
-async function ruleDrop(id, keys){
-  if (!keys || !keys.length) return;
+// The plain data change behind a drop, with no opinion about which screen asked --
+// the review queue re-renders its own modal (ruleDrop/undoDrop below), a product
+// card just closes (adminSplit/adminUnsplit, further down) -- and both must save
+// the exact same OVERRIDES.drop shape build_bundle.apply_drops() reads at night.
+function addDrop(id, keys){
   const d = (OVERRIDES.drop = OVERRIDES.drop || {}), cur = new Set(d[id] || []);
   keys.forEach(k => cur.add(k));
   d[id] = Array.from(cur);
+}
+function removeDrop(id, k){
+  const d = OVERRIDES.drop || {};
+  d[id] = (d[id] || []).filter(x => x !== k);
+  if (!d[id].length) delete d[id];
+  if (!Object.keys(d).length) delete OVERRIDES.drop;
+}
+async function ruleDrop(id, keys){
+  if (!keys || !keys.length) return;
+  addDrop(id, keys);
   renderStatus();
   toast((await saveOverrides())
     ? `הוצאתי ${keys.length === 1 ? 'מוצר אחד' : keys.length + ' מוצרים'} מהשורה — ${keys.length === 1 ? 'הוא יעמוד' : 'הם יעמדו'} בנפרד מהעדכון הלילי`
     : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
 }
 async function undoDrop(id, k){
-  const d = OVERRIDES.drop || {};
-  d[id] = (d[id] || []).filter(x => x !== k);
-  if (!d[id].length) delete d[id];
-  if (!Object.keys(d).length) delete OVERRIDES.drop;
+  removeDrop(id, k);
   renderStatus();
   toast((await saveOverrides()) ? 'חזר לשורה' : 'השמירה נכשלה — לנסות שוב');
+}
+// Same OVERRIDES.drop, called from a product's own card instead of the queue.
+// There is no catalogue number to point at here, only a store -- so the key saved
+// is the bare store id, which build_bundle._drop_hit already knows how to read.
+async function adminSplit(m, sid){
+  addDrop(m.id, [sid]);
+  closeSheet();
+  toast((await saveOverrides())
+    ? `"${STORES[sid] ? STORES[sid].n : sid}" יוצג כמוצר נפרד — מעדכון הלילי`
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function adminUnsplit(m, sid){
+  removeDrop(m.id, sid);
+  closeSheet();
+  toast((await saveOverrides()) ? 'חזר לשורה אחת' : 'השמירה נכשלה — לנסות שוב');
 }
 function statusPairs(){
   const p = openPairs();
@@ -888,8 +915,11 @@ async function ruleReview(id, verdict){
 
 function adminBox(m){
   if (!IS_ADMIN) return '';
-  const ov = ovOf(m.id);
-  const storeRows = m.offers.map(o => `<div class="adm-store"><span style="font-size:13px;font-weight:600">${esc(STORES[o.sid].n)}</span><button type="button" class="btn ghost small" data-admurl="${esc(o.sid)}">עריכת קישור</button>${m.offers.length > 1 ? `<button type="button" class="btn ghost small" data-admhs="${esc(o.sid)}" style="color:var(--rose)">להסתיר חנות זו</button>` : ''}</div>`).join('');
+  const ov = ovOf(m.id), dropped = dropsOf(m.id);
+  const storeRows = m.offers.map(o => `<div class="adm-store"><span style="font-size:13px;font-weight:600">${esc(STORES[o.sid].n)}</span><button type="button" class="btn ghost small" data-admurl="${esc(o.sid)}">עריכת קישור</button>${m.offers.length > 1 ? (dropped.has(o.sid)
+      ? `<button type="button" class="btn soft small" data-admunsplit="${esc(o.sid)}">לבטל — זה כן אותו מוצר</button>`
+      : `<button type="button" class="btn ghost small" data-admsplit="${esc(o.sid)}" style="color:var(--rose)" title="המוצר בחנות הזו הוא לא אותו מוצר — יוצג כשורה נפרדת">לא שייך — מוצר אחר</button>`) +
+      `<button type="button" class="btn ghost small" data-admhs="${esc(o.sid)}" style="color:var(--rose)">להסתיר חנות זו</button>` : ''}</div>`).join('');
   const restoreRows = (ov.hs || []).map(sid => `<div class="adm-store"><span style="font-size:13px">${esc(STORES[sid] ? STORES[sid].n : sid)} — הוסתרה</span><button type="button" class="btn soft small" data-admrs="${esc(sid)}">להחזיר</button></div>`).join('');
   return `<div class="admin-box"><div class="ttl">🛠 עריכת מנהל — משפיע על כל הנשים</div>
     <div class="row-btns">
@@ -897,7 +927,7 @@ function adminBox(m){
       <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
       <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
       <button type="button" class="btn soft small" data-adm="img">החלפת תמונה</button>
-    </div>${storeRows}${restoreRows}
+    </div>${m.offers.length > 1 ? `<div class="admin-hint">חנות שמוכרת כאן בפועל מוצר אחר — "לא שייך" מפריד אותה לשורה משלה. זה שונה מ"הסתרה", שמוחקת אותה מהתצוגה לגמרי.</div>` : ''}${storeRows}${restoreRows}
     <div class="admin-hint">השינוי נשמר לכולן תוך כדקה, ונכנס לקובץ לצמיתות בעדכון הלילי.</div></div>`;
 }
 function adminRename(m){
@@ -1114,12 +1144,26 @@ function renderMonths(){
 function giftText(gs){
   return `רשימת המתנות שלנו ללידה 🌸\n\n` + gs.map(g => `• ${g.name}${g.qty > 1 ? ` (×${g.qty})` : ''} — ${g.store}, ${nis(g.price)}${g.url ? `\n  ${g.url}` : ''}`).join('\n') + `\n\nתודה! ❤️`;
 }
+// מטמון קל של תפיסות המתנה (כמה יחידות כל שורה נתפסה) — מתעדכן ב-showView('gifts')
+let GIFT_CLAIMS_CACHE = {};
+async function refreshGiftClaims(){
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'gift-claims', {credentials:'same-origin', cache:'no-store'});
+    const d = await r.json();
+    if (d && d.ok) GIFT_CLAIMS_CACHE = d.claims || {};
+  } catch(e) {}
+}
 function renderGifts(){
   const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift'), given = ls_.filter(l => l.who === 'given');
-  const row = g => `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
+  const row = g => {
+    const c = GIFT_CLAIMS_CACHE[g.key] || {claimed:0};
+    const covered = c.claimed > 0 && c.claimed >= g.qty, partial = c.claimed > 0 && !covered;
+    const badge = covered ? ' <span class="tag" style="background:var(--sage-soft)">🎁 מכוסה</span>' : partial ? ` <span class="tag">🎁 ${c.claimed}/${g.qty} נתפס</span>` : '';
+    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}${badge}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
+  };
   $('#view-gifts').innerHTML = `<div class="card"><div class="bigline"><b class="num">${gs.length}</b><span class="muted">מתנות לבקש · שווי ${nis(total(gs))}</span></div>
-      <div style="margin-top:14px"><button type="button" class="btn primary big" id="btnShareGifts" ${gs.length?'':'disabled'}>שיתוף רשימת המתנות</button></div>
-      <p class="why">${gs.length ? 'הרשימה נשלחת כטקסט עם קישורים לחנויות — בוואטסאפ או בהעתקה.' : 'כדי לבקש מוצר במתנה: ברשימה, על מוצר שנבחר, לוחצים "לבקש במתנה".'}</p></div>
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary big" id="btnShareGifts" ${gs.length?'':'disabled'}>שיתוף רשימת המתנות</button><button type="button" class="btn soft" id="btnGiftLink" ${gs.length?'':'disabled'}>קישור לתפיסת מתנות</button></div>
+      <p class="why">${gs.length ? 'הרשימה נשלחת כטקסט עם קישורים לחנויות — בוואטסאפ או בהעתקה. "קישור לתפיסת מתנות" פותח עמוד שכל נותן/ת מתנה יכולים לתפוס בו יחידה, בלי חשבון.' : 'כדי לבקש מוצר במתנה: ברשימה, על מוצר שנבחר, לוחצים "לבקש במתנה".'}</p></div>
     ${gs.map(row).join('')}
     ${given.length ? `<div class="card" style="margin-top:16px"><h3>מגיע במתנה</h3><p class="why" style="margin:0 0 8px">מוצרים שמישהו כבר קונה — לא נספרים בסיכום.</p></div>${given.map(row).join('')}` : ''}`;
   $('#btnShareGifts').onclick = () => {
@@ -1129,6 +1173,105 @@ function renderGifts(){
     $('#copyGift').onclick = async () => { try { await navigator.clipboard.writeText(txt); toast('הרשימה הועתקה'); } catch(e) { $('#giftTxt').select(); toast('סמנו והעתיקו את הטקסט'); } };
     $('#giftClose').onclick = closeModal;
   };
+  $('#btnGiftLink').onclick = () => openGiftLinkModal();
+}
+// ---- קישור לתפיסת מתנות: הטוקן נבנה בשרת (הווקר) — הדפדפן רק מציג/מעתיק ----
+async function fetchGiftLink(rotate){
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'gift-link', {method: rotate ? 'POST' : 'GET', credentials:'same-origin', cache:'no-store'});
+    const d = await r.json();
+    if (!d || !d.ok) return null;
+    if (S.profile && d.salt) S.profile.giftSalt = d.salt; // מסונכרן — כך שהשמירה הבאה לא תדרוס את הסאלט החדש
+    return d.token;
+  } catch(e) { return null; }
+}
+async function openGiftLinkModal(){
+  openModal(`<h2>קישור לתפיסת מתנות</h2><p class="lead">כל מי שמקבל את הקישור יכול לתפוס מתנה — בלי חשבון. מי שתפס משהו, זה יסומן כ"מכוסה" ברשימה שלכם.</p><p class="why">טוענים קישור…</p>`);
+  const token = await fetchGiftLink(false);
+  if (!token) { openModal(`<h2>קישור לתפיסת מתנות</h2><p>לא הצלחנו לטעון קישור כרגע — לנסות שוב בעוד רגע.</p><button type="button" class="btn soft" id="giftLinkClose">סגירה</button>`); $('#giftLinkClose').onclick = closeModal; return; }
+  renderGiftLinkModal(token);
+}
+function renderGiftLinkModal(token){
+  const url = new URL(location.pathname, CONFIG.STORE_HOME); url.searchParams.set('gift', token);
+  const link = url.toString();
+  openModal(`<h2>קישור לתפיסת מתנות</h2><p class="lead">כל מי שמקבל את הקישור יכול לתפוס מתנה — בלי חשבון. מי שתפס משהו, זה יסומן כ"מכוסה" ברשימה שלכם.</p><div class="linkbox"><textarea id="giftLinkTxt" readonly>${esc(link)}</textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(link)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a><button type="button" class="btn" id="copyGiftLink">העתקה</button><button type="button" class="btn ghost" id="rotateGiftLink">קישור חדש (מבטל את הישן)</button><button type="button" class="btn soft" id="giftLinkClose">סגירה</button></div>`);
+  $('#copyGiftLink').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); } catch(e) { $('#giftLinkTxt').select(); toast('סמנו והעתיקו את הטקסט'); } };
+  $('#rotateGiftLink').onclick = async () => { const t = await fetchGiftLink(true); if (t) { renderGiftLinkModal(t); toast('קישור חדש נוצר — הקישור הקודם בוטל'); } else toast('לא הצלחנו — לנסות שוב'); };
+  $('#giftLinkClose').onclick = closeModal;
+}
+
+/* ---------- עמוד מתנות לאורח/ת (בלי חשבון) ---------- */
+function giftLocalKey(token){ return 'bl_gift_mine_' + token.split('.').slice(0,2).join('.'); }
+function giftLocalGet(token){ return ls.get(giftLocalKey(token)) || {}; }
+function giftLocalSet(token, map){ ls.set(giftLocalKey(token), map); }
+async function bootGiftView(token){
+  showScreen('screen-loading');
+  let d;
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'gift?t=' + encodeURIComponent(token), {credentials:'same-origin', cache:'no-store'});
+    d = await r.json();
+  } catch(e) { d = null; }
+  if (!d || !d.ok) {
+    $('#errMsg').textContent = (d && d.error === 'revoked_or_missing') ? 'הקישור הזה כבר לא בתוקף — כדאי לבקש קישור מעודכן.' : 'לא הצלחנו לטעון את רשימת המתנות. אולי הקישור פגום.';
+    showScreen('screen-error');
+    return;
+  }
+  renderGiftScreen(d.list, d.claims || {}, token);
+}
+function renderGiftScreen(list, claims, token){
+  showScreen(null);
+  $('#app').hidden = true; $('#tabs').hidden = true;
+  let el = $('#screen-gift');
+  if (!el) { el = document.createElement('div'); el.id = 'screen-gift'; el.className = 'full'; document.body.appendChild(el); }
+  el.hidden = false;
+  const gs = lines(list).filter(l => l.who === 'gift');
+  const mine = giftLocalGet(token);
+  const row = g => {
+    const c = claims[g.key] || {claimed:0, entries:[]};
+    const remaining = Math.max(0, g.qty - c.claimed);
+    const myEntryId = mine[g.key];
+    const already = myEntryId && c.entries.some(e => e.id === myEntryId);
+    const action = already
+      ? `<button type="button" class="btn small ghost" data-unclaim="${esc(g.key)}">ביטול — בסוף לא אקנה</button>`
+      : remaining > 0
+        ? `<button type="button" class="btn small primary" data-claim="${esc(g.key)}" data-remaining="${remaining}">אני אביא את זה 🎁</button>`
+        : `<span class="tag" style="opacity:.7">נתפס במלואו</span>`;
+    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · נדרשות ${g.qty}${c.claimed ? `, ${c.claimed} נתפסו` : ''}` : ''}</span><span class="p num">${nis(g.price)}</span>${action}</div>`;
+  };
+  el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span></div><div class="step">
+      <h1>רשימת המתנות 🌸</h1>
+      <p class="lead">כל מה שמופיע כאן עוד מבוקש. תופסים פריט כדי שלא יתפסו אותו כמה נותנים בטעות — בלי צורך בחשבון.</p>
+      ${gs.length ? gs.map(row).join('') : '<p class="why">עדיין לא סומנו מתנות ברשימה הזו.</p>'}
+    </div>`;
+  $$('#screen-gift [data-claim]').forEach(b => b.onclick = () => openGiftClaimModal(b.dataset.claim, +b.dataset.remaining, token));
+  $$('#screen-gift [data-unclaim]').forEach(b => b.onclick = () => giftUnclaim(b.dataset.unclaim, token));
+}
+function openGiftClaimModal(lineKey, remaining, token){
+  openModal(`<h2>תפיסת מתנה</h2><p>כמה יחידות תביאו? (נשארו ${remaining})</p>
+    <input type="number" id="giftQty" min="1" max="${remaining}" value="1" style="width:100%;margin-bottom:10px;padding:8px">
+    <input type="text" id="giftName" placeholder="שם (לא חובה — יעזור לאמא לדעת ממי)" style="width:100%;margin-bottom:10px;padding:8px">
+    <div style="display:flex;gap:8px"><button type="button" class="btn primary" id="giftClaimGo">מתחייבים 🎁</button><button type="button" class="btn ghost" id="giftClaimCancel">ביטול</button></div>`);
+  $('#giftClaimCancel').onclick = closeModal;
+  $('#giftClaimGo').onclick = () => giftClaim(lineKey, Math.max(1, Math.min(remaining, +$('#giftQty').value || 1)), $('#giftName').value || '', token);
+}
+async function giftClaim(lineKey, qty, giverName, token){
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'gift-claim', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({token, lineKey, qty, giverName})});
+    const d = await r.json();
+    closeModal();
+    if (!d || !d.ok) { toast(d && d.error === 'oversubscribed' ? ('מישהי כבר תפסה בדיוק עכשיו — נשארו ' + d.remaining) : 'לא הצלחנו לשמור, לנסות שוב'); bootGiftView(token); return; }
+    const mine = giftLocalGet(token); mine[lineKey] = d.entryId; giftLocalSet(token, mine);
+    toast('תודה! נשמר 🌸'); bootGiftView(token);
+  } catch(e) { closeModal(); toast('בעיית חיבור — לנסות שוב'); }
+}
+async function giftUnclaim(lineKey, token){
+  const mine = giftLocalGet(token); const entryId = mine[lineKey]; if (!entryId) return;
+  try {
+    await fetch(APP_PROXY_BASE + 'gift-unclaim', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({token, lineKey, entryId})});
+  } catch(e) {}
+  delete mine[lineKey]; giftLocalSet(token, mine);
+  toast('בוטל'); bootGiftView(token);
 }
 
 /* ---------- הגדרות ---------- */
@@ -1148,6 +1291,9 @@ async function boot(){
   showScreen('screen-loading');
   try { await loadData(); }
   catch (e) { $('#errMsg').textContent = 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'; showScreen('screen-error'); return; }
+  // עמוד מתנות לאורח/ת — קישור עם ?gift=<טוקן>, בלי חשבון ובלי מסך הרשמה כלל.
+  const giftToken = new URL(location.href).searchParams.get('gift');
+  if (giftToken) { $('#btnRetry').onclick = () => bootGiftView(giftToken); bootGiftView(giftToken); return; }
   const draftBack = Identity.completeSignIn();    // האם חזרנו מהתחברות (יש טיוטה מקודדת בכתובת)?
   USER = await Identity.current();                // מי מחובר/ת עכשיו, לפי שופיפיי
   IS_ADMIN = !!(USER && USER.admin);
