@@ -1200,7 +1200,10 @@ async function openGiftLinkModal(){
 }
 function renderGiftLinkModal(token){
   const url = new URL(location.pathname, CONFIG.STORE_HOME); url.searchParams.set('gift', token);
-  const pt = new URL(location.href).searchParams.get('preview_theme_id'); if (pt) url.searchParams.set('preview_theme_id', pt); // בזמן בדיקה על עותק תמה — שהקישור יפתח את אותו עותק
+  // בזמן בדיקה על עותק תמה — שהקישור יפתח את אותו עותק. שופיפיי מוחקת את preview_theme_id מהכתובת אחרי הטעינה, לכן קוראים מ-Shopify.theme ולא מהכתובת.
+  const th = (typeof Shopify !== 'undefined' && Shopify.theme) ? Shopify.theme : null;
+  const pt = new URL(location.href).searchParams.get('preview_theme_id') || (th && th.role && th.role !== 'main' && th.id ? String(th.id) : null);
+  if (pt) url.searchParams.set('preview_theme_id', pt);
   const link = url.toString();
   openModal(`<h2>קישור לתפיסת מתנות</h2><p class="lead">כל מי שמקבל את הקישור יכול לתפוס מתנה — בלי חשבון. מי שתפס משהו, זה יסומן כ"מכוסה" ברשימה שלכם.</p><div class="linkbox"><textarea id="giftLinkTxt" readonly>${esc(link)}</textarea></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(link)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a><button type="button" class="btn" id="copyGiftLink">העתקה</button><button type="button" class="btn ghost" id="rotateGiftLink">קישור חדש (מבטל את הישן)</button><button type="button" class="btn soft" id="giftLinkClose">סגירה</button></div>`);
