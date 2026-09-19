@@ -356,9 +356,10 @@ function enterApp(){
   sb.hidden = !parts.length; sb.textContent = parts.join(' ');
   $('#footNote').innerHTML = `מזהה גרסה: ${VERSION.v}. המחיר הסופי הוא תמיד המחיר באתר החנות.`;
   renderAll();
+  refreshGiftClaims().then(changed => { if (changed && UI.view === 'list') renderList(); });
 }
 function renderAll(){ renderList(); showView(UI.view); }
-function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') renderBudget(); if (v === 'months') renderMonths(); if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(renderGifts); } window.scrollTo({top:0}); }
+function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') renderBudget(); if (v === 'months') renderMonths(); if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(changed => { if (changed) renderGifts(); }); } if (v === 'list') refreshGiftClaims().then(changed => { if (changed) renderList(); }); window.scrollTo({top:0}); }
 $$('#tabs [role=tab]').forEach(b => b.onclick = () => showView(b.dataset.view));
 $('#fabAdd').onclick = () => openManual(null);
 
@@ -442,13 +443,13 @@ function renderPick(it, p){
   const my = p.pp != null, unit = my ? +p.pp : o.p;
   return `<div class="pick" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}${my ? ` · <b style="color:var(--sage)">המחיר שלי</b> · בחנות: ${nis(o.p)}` : ''}</span></span><span class="price num">${q > 1 ? nis(unit * q) : (my ? nis(unit) : priceLabel(o))}<button type="button" class="pedit" data-act="price" data-key="${key}" title="יש לי הנחה — לעדכן מחיר" aria-label="עריכת מחיר">✎</button></span></div>
     <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות ↗</a><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
-    ${whoRow(key, p.who || 'me')}</div>`;
+    ${giftBadge(key, q, true)}${whoRow(key, p.who || 'me')}</div>`;
 }
 function renderCustomPick(c){
   const key = 'c' + c.id, q = c.q || 1;
   return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span></span><span class="price num">${nis((+c.price || 0) * q)}<button type="button" class="pedit" data-act="price" data-key="${key}" title="עריכת מחיר" aria-label="עריכת מחיר">✎</button></span></div>
     <div class="row"><span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות ↗</a>` : ''}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
-    ${whoRow(key, c.who || 'me')}</div>`;
+    ${giftBadge(key, q, true)}${whoRow(key, c.who || 'me')}</div>`;
 }
 function renderItem(it){
   const picks = S.sel[it.id] || [], customs = S.custom.filter(c => c.i === it.id), have = !!S.have[it.id], models = modelsByItem[it.id] || [];
@@ -1147,20 +1148,26 @@ function giftText(gs){
 // מטמון קל של תפיסות המתנה (כמה יחידות כל שורה נתפסה) — מתעדכן ב-showView('gifts')
 let GIFT_CLAIMS_CACHE = {};
 async function refreshGiftClaims(){
+  if (!USER) return false;
   try {
     const r = await fetch(APP_PROXY_BASE + 'gift-claims', {credentials:'same-origin', cache:'no-store'});
     const d = await r.json();
-    if (d && d.ok) GIFT_CLAIMS_CACHE = d.claims || {};
-  } catch(e) {}
+    if (!d || !d.ok) return false;
+    const next = d.claims || {}, changed = JSON.stringify(next) !== JSON.stringify(GIFT_CLAIMS_CACHE);
+    GIFT_CLAIMS_CACHE = next;
+    return changed;
+  } catch(e) { return false; }
+}
+// תג "מכוסה" / "X מתוך Y נתפסו" — משמש גם את הרשימה הרגילה (הכרעת דניאל #3) וגם את לשונית המתנות
+function giftBadge(key, qty, asRow){
+  const c = GIFT_CLAIMS_CACHE[key]; if (!c || !c.claimed) return '';
+  const covered = c.claimed >= qty;
+  const tag = `<span class="tag ${covered ? 'best' : 'gift'}">🎁 ${covered ? 'מכוסה — מישהו כבר מביא את זה' : `${c.claimed} מתוך ${qty} נתפסו במתנה`}</span>`;
+  return asRow ? `<div class="row">${tag}</div>` : ' ' + tag;
 }
 function renderGifts(){
   const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift'), given = ls_.filter(l => l.who === 'given');
-  const row = g => {
-    const c = GIFT_CLAIMS_CACHE[g.key] || {claimed:0};
-    const covered = c.claimed > 0 && c.claimed >= g.qty, partial = c.claimed > 0 && !covered;
-    const badge = covered ? ' <span class="tag" style="background:var(--sage-soft)">🎁 מכוסה</span>' : partial ? ` <span class="tag">🎁 ${c.claimed}/${g.qty} נתפס</span>` : '';
-    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}${badge}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
-  };
+  const row = g => `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}${giftBadge(g.key, g.qty, false)}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
   $('#view-gifts').innerHTML = `<div class="card"><div class="bigline"><b class="num">${gs.length}</b><span class="muted">מתנות לבקש · שווי ${nis(total(gs))}</span></div>
       <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary big" id="btnShareGifts" ${gs.length?'':'disabled'}>שיתוף רשימת המתנות</button><button type="button" class="btn soft" id="btnGiftLink" ${gs.length?'':'disabled'}>קישור לתפיסת מתנות</button></div>
       <p class="why">${gs.length ? 'הרשימה נשלחת כטקסט עם קישורים לחנויות — בוואטסאפ או בהעתקה. "קישור לתפיסת מתנות" פותח עמוד שכל נותן/ת מתנה יכולים לתפוס בו יחידה, בלי חשבון.' : 'כדי לבקש מוצר במתנה: ברשימה, על מוצר שנבחר, לוחצים "לבקש במתנה".'}</p></div>
@@ -1193,6 +1200,7 @@ async function openGiftLinkModal(){
 }
 function renderGiftLinkModal(token){
   const url = new URL(location.pathname, CONFIG.STORE_HOME); url.searchParams.set('gift', token);
+  const pt = new URL(location.href).searchParams.get('preview_theme_id'); if (pt) url.searchParams.set('preview_theme_id', pt); // בזמן בדיקה על עותק תמה — שהקישור יפתח את אותו עותק
   const link = url.toString();
   openModal(`<h2>קישור לתפיסת מתנות</h2><p class="lead">כל מי שמקבל את הקישור יכול לתפוס מתנה — בלי חשבון. מי שתפס משהו, זה יסומן כ"מכוסה" ברשימה שלכם.</p><div class="linkbox"><textarea id="giftLinkTxt" readonly>${esc(link)}</textarea></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(link)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a><button type="button" class="btn" id="copyGiftLink">העתקה</button><button type="button" class="btn ghost" id="rotateGiftLink">קישור חדש (מבטל את הישן)</button><button type="button" class="btn soft" id="giftLinkClose">סגירה</button></div>`);
@@ -1221,23 +1229,29 @@ async function bootGiftView(token){
 }
 function renderGiftScreen(list, claims, token){
   showScreen(null);
-  $('#app').hidden = true; $('#tabs').hidden = true;
+  $('#app').hidden = true; $('#tabs').hidden = true; $('#fabAdd').hidden = true;
   let el = $('#screen-gift');
-  if (!el) { el = document.createElement('div'); el.id = 'screen-gift'; el.className = 'full'; document.body.appendChild(el); }
+  // המסך חייב לשבת בתוך שורש הכלי (ליד שאר המסכים) — בתמה ה-CSS וה-$ מתוחמים ל-#bl
+  if (!el) { el = document.createElement('div'); el.id = 'screen-gift'; el.className = 'full'; $('#screen-loading').parentNode.insertBefore(el, $('#screen-loading')); }
   el.hidden = false;
-  const gs = lines(list).filter(l => l.who === 'gift');
+  const gs = lines(normalize(list)).filter(l => l.who === 'gift');
   const mine = giftLocalGet(token);
   const row = g => {
     const c = claims[g.key] || {claimed:0, entries:[]};
     const remaining = Math.max(0, g.qty - c.claimed);
     const myEntryId = mine[g.key];
-    const already = myEntryId && c.entries.some(e => e.id === myEntryId);
+    const already = !!myEntryId && c.entries.some(e => e.id === myEntryId);
+    // השוואת מחירים: כל החנויות שמוכרות את הדגם, מהזולה ליקרה (הבחירה של האמא מודגשת)
+    const offers = g.model ? g.model.offers.filter(o => STORES[o.sid] && !STORES[o.sid].hidden).slice().sort((a, b) => a.p - b.p) : [];
+    const cmp = offers.length
+      ? `<span class="m" style="grid-column:1 / -1">איפה קונים: ${offers.map(o => `<a href="${esc(o.u)}" target="_blank" rel="noopener"${o.sid === g.sid ? ' style="font-weight:700"' : ''}>${esc(STORES[o.sid].n)} ${priceLabel(o)}</a>`).join(' · ')}</span>`
+      : (g.url ? `<a class="m" style="grid-column:1 / -1" href="${esc(g.url)}" target="_blank" rel="noopener">לרכישה בחנות ←</a>` : '');
     const action = already
       ? `<button type="button" class="btn small ghost" data-unclaim="${esc(g.key)}">ביטול — בסוף לא אקנה</button>`
       : remaining > 0
         ? `<button type="button" class="btn small primary" data-claim="${esc(g.key)}" data-remaining="${remaining}">אני אביא את זה 🎁</button>`
-        : `<span class="tag" style="opacity:.7">נתפס במלואו</span>`;
-    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · נדרשות ${g.qty}${c.claimed ? `, ${c.claimed} נתפסו` : ''}` : ''}</span><span class="p num">${nis(g.price)}</span>${action}</div>`;
+        : `<span class="tag best">נתפס במלואו</span>`;
+    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="p num">${g.price ? nis(g.price) : ''}</span><span class="m">${esc(g.store)}${g.item ? ` · ${esc(g.item.n)}` : ''}${g.qty > 1 ? ` · נדרשות ${g.qty}${c.claimed ? `, ${c.claimed} כבר נתפסו` : ''}` : ''}</span>${cmp}<span style="grid-column:1 / -1">${action}</span></div>`;
   };
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span></div><div class="step">
       <h1>רשימת המתנות 🌸</h1>
