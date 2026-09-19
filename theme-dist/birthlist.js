@@ -6,7 +6,7 @@
    ===================================================================== */
 const CONFIG = {
   // 🔑 כתובת הנתונים — הקבוע היחיד. מעבר ל-Cloudflare = שינוי השורה הזו בלבד.
-  DATA_BASE: 'https://keren-dayman.github.io/me-and-mommy-birthlist-data/',
+  DATA_BASE: 'https://pub-16b109ac2c064d7cb1eda50bf0354d78.r2.dev/',
   // תמונות מוצרים — מתג אחד לכולם. אין מתג למשתמשים.
   SHOW_IMAGES: true,
   // מחיר שנבדק לפני יותר מ-X ימים: מ-WARN מציגים אזהרה, מ-HIDE לא מציגים בכלל.
@@ -581,6 +581,8 @@ function openModel(mid){
     $$('[data-admhs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = [...(ovOf(m.id).hs || []), b.dataset.admhs]; closeSheet(); adminApply(m.id, {hs}, 'החנות הוסתרה מהמוצר הזה'); });
     $$('[data-admrs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = (ovOf(m.id).hs || []).filter(s => s !== b.dataset.admrs); closeSheet(); adminApply(m.id, {hs}, 'החנות הוחזרה ✓'); });
     $$('[data-admurl]', $('#sheet')).forEach(b => b.onclick = () => adminEditUrl(m, b.dataset.admurl));
+    $$('[data-admsplit]',   $('#sheet')).forEach(b => b.onclick = () => adminSplit(m, b.dataset.admsplit));
+    $$('[data-admunsplit]', $('#sheet')).forEach(b => b.onclick = () => adminUnsplit(m, b.dataset.admunsplit));
   }
 }
 
@@ -687,8 +689,22 @@ function shopKeys(id, sid){
   const r = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(x => x.id === id);
   return r ? liveEx(r).filter(e => e.s === sid).map(e => e.k) : [];
 }
+// A decision is saved the moment it is made, but bl_admin.json is rebuilt once a night,
+// so until then it still lists rows he has already answered. Reading that list without
+// reading his answers is why a ruled row came back every time he reopened the screen
+// (19.9). These two are the only doors the screen reads the queue through.
+function openReview(){
+  const done = OVERRIDES.review || {};
+  return ((ADMIN_DOC && ADMIN_DOC.review) || []).filter(r => !done[r.id]);
+}
+function openPairs(){
+  const no = new Set(OVERRIDES.notmerge || []), joined = new Set();
+  (OVERRIDES.merge || []).forEach(g => g.forEach(id => joined.add(id)));
+  return ((ADMIN_DOC && ADMIN_DOC.pairs) || [])
+    .filter(r => !no.has(r.k) && !joined.has(r.a.id) && !joined.has(r.b.id));
+}
 function statusQueue(){
-  const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  const q = openReview();
   if (!ADMIN_DOC) return '<p class="admin-hint">לא הצלחתי לטעון את קובץ הבדיקה.</p>';
   if (!q.length) return '<p style="font-size:13px;margin:4px 0 0">אין דגמים שממתינים לך. ✓</p>';
   return `<p style="font-size:13px;margin:4px 0 8px">המנוע חושב שאלה אותו מוצר בכמה חנויות, אבל הפרש המחירים גדול מדי בשביל להיות בטוח — אז הוא מחכה לך. אם חנות אחת או מוצר אחד פשוט לא שייכים לכאן, אפשר להוציא אותם ב-"לא שייך" — הם יהפכו לשורה נפרדת משלהם, ומה שנשאר יעמוד לבד.</p>`
@@ -740,26 +756,51 @@ function statusDrops(){
   }
   return n ? `<div class="ttl" style="margin-top:18px">מוצרים שהוצאתי משורות (${n})</div>${rows}` : '';
 }
-async function ruleDrop(id, keys){
-  if (!keys || !keys.length) return;
+// The plain data change behind a drop, with no opinion about which screen asked --
+// the review queue re-renders its own modal (ruleDrop/undoDrop below), a product
+// card just closes (adminSplit/adminUnsplit, further down) -- and both must save
+// the exact same OVERRIDES.drop shape build_bundle.apply_drops() reads at night.
+function addDrop(id, keys){
   const d = (OVERRIDES.drop = OVERRIDES.drop || {}), cur = new Set(d[id] || []);
   keys.forEach(k => cur.add(k));
   d[id] = Array.from(cur);
+}
+function removeDrop(id, k){
+  const d = OVERRIDES.drop || {};
+  d[id] = (d[id] || []).filter(x => x !== k);
+  if (!d[id].length) delete d[id];
+  if (!Object.keys(d).length) delete OVERRIDES.drop;
+}
+async function ruleDrop(id, keys){
+  if (!keys || !keys.length) return;
+  addDrop(id, keys);
   renderStatus();
   toast((await saveOverrides())
     ? `הוצאתי ${keys.length === 1 ? 'מוצר אחד' : keys.length + ' מוצרים'} מהשורה — ${keys.length === 1 ? 'הוא יעמוד' : 'הם יעמדו'} בנפרד מהעדכון הלילי`
     : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
 }
 async function undoDrop(id, k){
-  const d = OVERRIDES.drop || {};
-  d[id] = (d[id] || []).filter(x => x !== k);
-  if (!d[id].length) delete d[id];
-  if (!Object.keys(d).length) delete OVERRIDES.drop;
+  removeDrop(id, k);
   renderStatus();
   toast((await saveOverrides()) ? 'חזר לשורה' : 'השמירה נכשלה — לנסות שוב');
 }
+// Same OVERRIDES.drop, called from a product's own card instead of the queue.
+// There is no catalogue number to point at here, only a store -- so the key saved
+// is the bare store id, which build_bundle._drop_hit already knows how to read.
+async function adminSplit(m, sid){
+  addDrop(m.id, [sid]);
+  closeSheet();
+  toast((await saveOverrides())
+    ? `"${STORES[sid] ? STORES[sid].n : sid}" יוצג כמוצר נפרד — מעדכון הלילי`
+    : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+}
+async function adminUnsplit(m, sid){
+  removeDrop(m.id, sid);
+  closeSheet();
+  toast((await saveOverrides()) ? 'חזר לשורה אחת' : 'השמירה נכשלה — לנסות שוב');
+}
 function statusPairs(){
-  const p = (ADMIN_DOC && ADMIN_DOC.pairs) || [];
+  const p = openPairs();
   if (!ADMIN_DOC) return '';
   if (!p.length) return '<p style="font-size:13px;margin:4px 0 0">אין הצעות חדשות. ✓</p>';
   return `<p style="font-size:13px;margin:4px 0 8px">שני מוצרים שנראים כמו אותו דבר בשתי חנויות, שהמנוע לא חיבר לבד כי השמות שונים מדי. אם זה אותו מוצר — הם יתאחדו לשורה אחת עם השוואת מחיר, במקום להופיע פעמיים.</p>`
@@ -792,8 +833,7 @@ async function rulePair(key, join){
   if (!row) return;
   if (join) (OVERRIDES.merge = OVERRIDES.merge || []).push([row.a.id, row.b.id]);
   else (OVERRIDES.notmerge = OVERRIDES.notmerge || []).push(key);
-  ADMIN_DOC.pairs = ADMIN_DOC.pairs.filter(r => r.k !== key);
-  renderStatus();
+  renderStatus();          // openPairs() hides it from here on -- and shows it again if he undoes the merge
   toast((await saveOverrides())
     ? (join ? `יתאחדו לשורה אחת בעדכון הלילי ✓` : 'סומן כמוצרים שונים — לא יחזור לכאן')
     : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
@@ -815,14 +855,37 @@ function statusGone(){
       <div class="st-s">${esc(itemById[x.i] ? itemById[x.i].n : 'פריט ' + x.i)}${x.b ? ' · ' + esc(brandName(x.b) || x.b) : ''}${x.lo != null ? ' · היה ' + esc(nis(x.lo)) : ''}</div>
     </div></div>`).join('');
 }
-function renderStatus(){
+// Every answer he has given, with a way back. An answered row simply leaves the queue,
+// so without this a mis-tap would be invisible as well as permanent.
+function statusRuled(){
+  const done = OVERRIDES.review || {}, ids = Object.keys(done);
+  if (!ids.length) return '';
   const q = (ADMIN_DOC && ADMIN_DOC.review) || [];
+  return `<div class="ttl" style="margin-top:18px">הכרעות שקיבלת (${ids.length})</div>` + ids.map(id => {
+    const row = q.find(x => x.id === id), m = modelById[id], same = done[id] === 'same';
+    return `<div class="st-row"><span class="st-dot">${same ? '✓' : '✕'}</span><div class="st-main">
+      <div class="st-t">${esc((row && row.n) || (m && m.n) || id)}</div>
+      <div class="st-s">${same ? 'אישרת — מוצג לכולן' : 'סימנת כמוצרים שונים — לא מוצג'}</div></div>
+      <button type="button" class="btn soft small" data-unrule="${esc(id)}">לבטל</button></div>`;
+  }).join('');
+}
+async function undoRule(id){
+  const done = OVERRIDES.review || {};
+  delete done[id];
+  if (!Object.keys(done).length) delete OVERRIDES.review;
+  renderStatus();
+  toast((await saveOverrides()) ? 'ההכרעה בוטלה — השורה חזרה להמתנה' : 'השמירה נכשלה — לנסות שוב');
+}
+function renderStatus(){
+  const q = openReview();
+  const p = openPairs();
   const built = ADMIN_DOC && ADMIN_DOC.built;
   openModal(`<h2>🛠 מצב הכלי</h2>
     <div class="ttl" style="margin-top:12px">הריצות האחרונות</div>${statusRuns()}
     <div class="ttl" style="margin-top:18px">החנויות</div>${statusStores()}
     <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}
-    <div class="ttl" style="margin-top:18px">נראים כמו אותו מוצר${(ADMIN_DOC && ADMIN_DOC.pairs || []).length ? ` (${ADMIN_DOC.pairs.length})` : ''}</div>${statusPairs()}
+    <div class="ttl" style="margin-top:18px">נראים כמו אותו מוצר${p.length ? ` (${p.length})` : ''}</div>${statusPairs()}
+    ${statusRuled()}
     ${statusMerged()}
     ${statusDrops()}
     <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
@@ -833,6 +896,7 @@ function renderStatus(){
   $$('[data-rqno]',  $('#modal')).forEach(b => b.onclick = () => ruleReview(b.dataset.rqno,  'different'));
   $$('[data-pyes]',  $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pyes, true));
   $$('[data-pno]',   $('#modal')).forEach(b => b.onclick = () => rulePair(b.dataset.pno,  false));
+  $$('[data-unrule]',  $('#modal')).forEach(b => b.onclick = () => undoRule(b.dataset.unrule));
   $$('[data-unmerge]', $('#modal')).forEach(b => b.onclick = () => unmergePair(+b.dataset.unmerge));
   $$('[data-drop]',     $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.drop, [b.dataset.k]));
   $$('[data-dropshop]', $('#modal')).forEach(b => b.onclick = () => ruleDrop(b.dataset.dropshop, shopKeys(b.dataset.dropshop, b.dataset.s)));
@@ -843,8 +907,7 @@ async function ruleReview(id, verdict){
   const row = ((ADMIN_DOC && ADMIN_DOC.review) || []).find(r => r.id === id);
   const name = row ? row.n : 'המוצר';
   (OVERRIDES.review = OVERRIDES.review || {})[id] = verdict;
-  if (ADMIN_DOC) ADMIN_DOC.review = ADMIN_DOC.review.filter(r => r.id !== id);
-  renderStatus();
+  renderStatus();          // openReview() hides it from here on, and the row stays so the undo list can name it
   toast((await saveOverrides())
     ? (verdict === 'same' ? `"${name}" ייצא לאוויר בעדכון הלילי ✓` : `"${name}" לא יוצג — ולא יחזור לכאן`)
     : 'התשובה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
@@ -852,8 +915,11 @@ async function ruleReview(id, verdict){
 
 function adminBox(m){
   if (!IS_ADMIN) return '';
-  const ov = ovOf(m.id);
-  const storeRows = m.offers.map(o => `<div class="adm-store"><span style="font-size:13px;font-weight:600">${esc(STORES[o.sid].n)}</span><button type="button" class="btn ghost small" data-admurl="${esc(o.sid)}">עריכת קישור</button>${m.offers.length > 1 ? `<button type="button" class="btn ghost small" data-admhs="${esc(o.sid)}" style="color:var(--rose)">להסתיר חנות זו</button>` : ''}</div>`).join('');
+  const ov = ovOf(m.id), dropped = dropsOf(m.id);
+  const storeRows = m.offers.map(o => `<div class="adm-store"><span style="font-size:13px;font-weight:600">${esc(STORES[o.sid].n)}</span><button type="button" class="btn ghost small" data-admurl="${esc(o.sid)}">עריכת קישור</button>${m.offers.length > 1 ? (dropped.has(o.sid)
+      ? `<button type="button" class="btn soft small" data-admunsplit="${esc(o.sid)}">לבטל — זה כן אותו מוצר</button>`
+      : `<button type="button" class="btn ghost small" data-admsplit="${esc(o.sid)}" style="color:var(--rose)" title="המוצר בחנות הזו הוא לא אותו מוצר — יוצג כשורה נפרדת">לא שייך — מוצר אחר</button>`) +
+      `<button type="button" class="btn ghost small" data-admhs="${esc(o.sid)}" style="color:var(--rose)">להסתיר חנות זו</button>` : ''}</div>`).join('');
   const restoreRows = (ov.hs || []).map(sid => `<div class="adm-store"><span style="font-size:13px">${esc(STORES[sid] ? STORES[sid].n : sid)} — הוסתרה</span><button type="button" class="btn soft small" data-admrs="${esc(sid)}">להחזיר</button></div>`).join('');
   return `<div class="admin-box"><div class="ttl">🛠 עריכת מנהל — משפיע על כל הנשים</div>
     <div class="row-btns">
@@ -861,7 +927,7 @@ function adminBox(m){
       <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
       <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
       <button type="button" class="btn soft small" data-adm="img">החלפת תמונה</button>
-    </div>${storeRows}${restoreRows}
+    </div>${m.offers.length > 1 ? `<div class="admin-hint">חנות שמוכרת כאן בפועל מוצר אחר — "לא שייך" מפריד אותה לשורה משלה. זה שונה מ"הסתרה", שמוחקת אותה מהתצוגה לגמרי.</div>` : ''}${storeRows}${restoreRows}
     <div class="admin-hint">השינוי נשמר לכולן תוך כדקה, ונכנס לקובץ לצמיתות בעדכון הלילי.</div></div>`;
 }
 function adminRename(m){
