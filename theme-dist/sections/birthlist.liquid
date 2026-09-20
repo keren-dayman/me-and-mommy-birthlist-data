@@ -79,6 +79,7 @@
   <section class="view" id="view-months"></section>
   <section class="view" id="view-gifts"></section>
   <section class="view" id="view-budget"></section>
+  <div class="refer" id="refer" hidden></div>
 </div>
 <button class="btn primary fab" id="fabAdd" hidden><svg class="icon"><use href="#i-plus"/></svg> מוצר משלי</button>
 <nav class="nav-bottom" id="tabs" aria-label="ניווט" hidden>
@@ -111,6 +112,10 @@
     "ob0_btn": {{ section.settings.t_ob0_btn | json }},
     "ob1_title": {{ section.settings.t_ob1_title | json }},
     "ob1_lead": {{ section.settings.t_ob1_lead | json }},
+    "wa_title": {{ section.settings.t_wa_title | json }},
+    "wa_lead": {{ section.settings.t_wa_lead | json }},
+    "wa_btn": {{ section.settings.t_wa_btn | json }},
+    "wa_skip": {{ section.settings.t_wa_skip | json }},
     "ob2_title": {{ section.settings.t_ob2_title | json }},
     "ob2_lead": {{ section.settings.t_ob2_lead | json }},
     "ob2_btn": {{ section.settings.t_ob2_btn | json }},
@@ -119,11 +124,16 @@
     "signin_title": {{ section.settings.t_signin_title | json }},
     "signin_lead": {{ section.settings.t_signin_lead | json }},
     "signin_btn": {{ section.settings.t_signin_btn | json }},
-    "signin_tiny": {{ section.settings.t_signin_tiny | json }}
+    "signin_tiny": {{ section.settings.t_signin_tiny | json }},
+    "refer_title": {{ section.settings.t_refer_title | json }},
+    "refer_lead": {{ section.settings.t_refer_lead | json }},
+    "refer_btn": {{ section.settings.t_refer_btn | json }},
+    "refer_wa": {{ section.settings.t_refer_wa | json }}
   },
   "img": {
     {% if section.settings.img_hello != blank %}"hello": {{ section.settings.img_hello | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_date != blank %}"date": {{ section.settings.img_date | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_group != blank %}"group": {{ section.settings.img_group | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_first != blank %}"first": {{ section.settings.img_first | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_lock != blank %}"lock": {{ section.settings.img_lock | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_tour1 != blank %}"tour1": {{ section.settings.img_tour1 | image_url: width: 480 | json }},{% endif %}
@@ -252,6 +262,43 @@
     },
     {
       "type": "header",
+      "content": "קבוצת הוואטסאפ (מופיעה רק אם הוזן קישור לחודש שנבחר)"
+    },
+    {
+      "type": "paragraph",
+      "content": "את הקישור לכל חודש מזינים בתוך הכלי עצמו — כפתור ״מוצר משלי״ ← מנהל ← קבוצות וואטסאפ. כאן רק הנוסח. {month} יוחלף בחודש ובשנה שהיא בחרה."
+    },
+    {
+      "type": "image_picker",
+      "id": "img_group",
+      "label": "איור"
+    },
+    {
+      "type": "text",
+      "id": "t_wa_title",
+      "label": "כותרת",
+      "default": "יש קבוצה שמחכה לך"
+    },
+    {
+      "type": "textarea",
+      "id": "t_wa_lead",
+      "label": "טקסט ({month} = החודש שנבחר)",
+      "default": "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה. אני מנהל אותה וזמין שם לשאלות."
+    },
+    {
+      "type": "text",
+      "id": "t_wa_btn",
+      "label": "כפתור ההצטרפות ({month} = החודש שנבחר)",
+      "default": "הצטרפות לקבוצת הווצאפ של משוערות {month}"
+    },
+    {
+      "type": "text",
+      "id": "t_wa_skip",
+      "label": "קישור הדילוג",
+      "default": "להמשיך בלי הקבוצה"
+    },
+    {
+      "type": "header",
       "content": "שאלה 2 — לידה ראשונה"
     },
     {
@@ -363,6 +410,34 @@
       "id": "t_signin_tiny",
       "label": "שורה קטנה",
       "default": "בלי סיסמאות. הפרטים לא נמסרים לאף חנות."
+    },
+    {
+      "type": "header",
+      "content": "להמליץ לחברה (בתחתית כל לשונית)"
+    },
+    {
+      "type": "text",
+      "id": "t_refer_title",
+      "label": "כותרת",
+      "default": "להמליץ לחברה"
+    },
+    {
+      "type": "textarea",
+      "id": "t_refer_lead",
+      "label": "טקסט",
+      "default": "מכירה מישהי בהיריון? שלחי לה את הכלי. היא תקבל רשימה מלאה עם מחירים מכל החנויות, בלי תשלום."
+    },
+    {
+      "type": "text",
+      "id": "t_refer_btn",
+      "label": "כפתור",
+      "default": "שליחה לחברה בוואטסאפ"
+    },
+    {
+      "type": "textarea",
+      "id": "t_refer_wa",
+      "label": "ההודעה שנשלחת בוואטסאפ (הקישור נוסף אחריה)",
+      "default": "מצאתי כלי שמתכנן את כל הקניות ללידה — רשימה מלאה, מחירים מכל החנויות, והכי זול מסומן. בחינם:"
     },
     {
       "type": "header",

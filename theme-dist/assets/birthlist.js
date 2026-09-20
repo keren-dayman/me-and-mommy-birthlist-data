@@ -35,6 +35,12 @@ const BUY_MONTHS_BEFORE_ITEM = { 1: 4, 12: 4, 74: 0 };
 const BRAND_NAMES = {shilav:'שילב',minene:'מיננה',chicco:'Chicco',twigy:'Twigy',laura:'Laura',nino:'Nino',olimoli:'Olimoli',segal:'סגל בייבי',lorens:'Lorens',joie:'Joie',cybex:'Cybex',tal:'טל',suavinex:'Suavinex',nuna:'Nuna',avent:'Philips Avent',boobee:'Boobee',simplygood:'Simply Good',tinylove:'Tiny Love',biamba:'Biamba',drfischer:'ד"ר פישר',lume:'Lume',sportline:'Sportline',mommycare:'Mommy Care',graco:'Graco',lovi:'Lovi',mam:'MAM',moona:'Moona',babytech:'BabyTech',anex:'Anex',tommeetippee:'Tommee Tippee',aminach:'עמינח',medela:'Medela',infanti:'Infanti',britax:'Britax',bebejou:'Bébé-Jou',bugaboo:'Bugaboo',dainys:'Dainys',nuk:'NUK',mushie:'Mushie',kinderkraft:'Kinderkraft',lansinoh:'Lansinoh',flyontex:'Flyontex',babybjorn:'BabyBjörn',lamer:'לאמר',bibs:'BIBS',stokke:'Stokke',beurer:'Beurer',loopump:'Loopump',farmamedic:'פארמה מדיק',babytouch:'Baby Touch',brightstarts:'Bright Starts',pelicare:'Pelicare',taftoys:'Taf Toys',nuby:'Nuby',sweetie:'Sweetie',mustela:'Mustela',nuvita:'Nuvita',fehn:'Fehn',dillians:'Dillians',maxicosi:'Maxi-Cosi',huggies:'Huggies',litaf:'ליטף',frigg:'Frigg',babytrend:'Baby Trend',miyababy:'Miya Baby',weleda:'Weleda',hegen:'Hegen',babysafe:'BabySafe',winfun:'WinFun',nanit:'Nanit',mamaspapas:'Mamas & Papas',elysium:'Elysium',ergobaby:'Ergobaby',pampers:'Pampers',munchkin:'Munchkin',hape:'Hape',donebydeer:'Done by Deer',babyeinstein:'Baby Einstein',doona:'Doona',babymonsters:'Baby Monsters',nip:'NIP',beaba:'Béaba',battat:'Battat',infantino:'Infantino',fisherprice:'Fisher-Price',yookidoo:'Yookidoo',evenflo:'Evenflo',besafe:'BeSafe',babyjogger:'Baby Jogger',joolz:'Joolz',kidsconcept:'Kids Concept',minimonkey:'Minimonkey',babybrezza:'Baby Brezza',bopita:'Bopita',owlet:'Owlet',babyark:'Babyark','4moms':'4moms',inglesina:'Inglesina',uppababy:'UPPAbaby',polarb:'Polar B',nattou:'Nattou'};
 const STORE_COLORS = {shilav:'#5B8DEF',babystar:'#E27D60',motsesim:'#8E6BBF',agalease:'#4FA37A',minene:'#D48CB0',superpharm:'#3A9BC5'};
 const CAT_EMOJI = {'עגלה':'🛒','בטיחות':'🛡️','חדר שינה':'🛏️','פעילויות':'🧸','אמבטיה':'🛁','ביגוד':'👕','האכלה':'🍼','טיפול והגיינה':'🧴','לאם':'🤱'};
+// שתי קטגוריות קיבלו איור משלהן: עגלת תינוק (ולא עגלת סופר) ועריסה.
+const CAT_SVG = {
+  'עגלה': `<svg class="cico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.6h11.2"/><path d="M14.7 12.6V8.2a5.6 5.6 0 0 0-11.2 0v4.4"/><path d="M14.7 8.2 19.6 5.4"/><path d="M6 12.6v2.6M12.4 12.6v2.6"/><circle cx="5.6" cy="17.4" r="2"/><circle cx="12.8" cy="17.4" r="2"/></svg>`,
+  'חדר שינה': `<svg class="cico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.4h16"/><path d="M5.2 8.4v8.2M18.8 8.4v8.2"/><path d="M5.2 13.6h13.6"/><path d="M8.4 8.4v5.2M12 8.4v5.2M15.6 8.4v5.2"/><path d="M3.6 16.6a18 18 0 0 0 16.8 0"/></svg>`,
+};
+const catIcon = c => CAT_SVG[c] || CAT_EMOJI[c] || '🍼';
 const TWINS_DOUBLE = new Set([6, 7, 12, 14, 15, 21, 32, 33, 35, 36]); // תאומים → כמות כפולה
 const TAGS = {'חובה':'must','מומלץ':'rec','לא חובה':'opt'};
 const TAG_ORDER = ['חובה','מומלץ','לא חובה'];
@@ -382,10 +388,22 @@ function showScreen(id){ SCREENS.forEach(s => $('#' + s).hidden = s !== id); $('
 
 /* ---------- 1. שאלות פתיחה ---------- */
 const OB = { step: 0, due: null, twins: false, first: true };
+
+/* ---------- קבוצות הוואטסאפ של המשוערות ----------
+   לכל חודש משוער קבוצה משלו. הקישורים יושבים ב-OVERRIDES.wa, נשמרים ממסך המנהל,
+   וזמינים כבר בשאלות הפתיחה — הם נטענים יחד עם שאר תיקוני המנהל, לפני שהמסך עולה.
+   חודש בלי קישור מדולג בשקט: המשתמשת לא רואה כפתור שלא מוביל לשום מקום.           */
+function waGroups(){ const w = OVERRIDES.wa; return (w && typeof w === 'object' && !Array.isArray(w)) ? w : {}; }
+const waKey = due => String(due || '').slice(0, 7);
+function waLinkFor(due){ const l = waGroups()[waKey(due)]; return (typeof l === 'string' && /^https:\/\//i.test(l.trim())) ? l.trim() : ''; }
+function waMonthName(due){ const [y, m] = waKey(due).split('-'); return MONTHS_HE[+m - 1] ? `${MONTHS_HE[+m - 1]} ${y}` : ''; }
+// שלבי השאלות. שלב הקבוצה קיים רק כשיש קבוצה לחודש שנבחר — ולכן המספר משתנה.
+const obSteps = () => ['hello', 'date', ...(waLinkFor(OB.due) ? ['wa'] : []), 'first'];
 const ART = {
   hello: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--peach-soft)"/><circle cx="80" cy="70" r="26" fill="var(--surface)"/><circle cx="70" cy="66" r="3" fill="var(--ink)"/><circle cx="90" cy="66" r="3" fill="var(--ink)"/><path d="M70 78q10 8 20 0" stroke="var(--peach-deep)" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 122q30-30 60 0" fill="var(--surface)"/><circle cx="118" cy="46" r="6" fill="var(--peach)"/><circle cx="40" cy="50" r="4" fill="var(--sage)"/><circle cx="128" cy="100" r="4" fill="var(--sky)"/></svg>`,
   date: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--sky-soft)"/><rect x="42" y="50" width="76" height="66" rx="12" fill="var(--surface)"/><rect x="42" y="50" width="76" height="20" rx="12" fill="var(--peach)"/><circle cx="60" cy="88" r="5" fill="var(--line)"/><circle cx="80" cy="88" r="5" fill="var(--line)"/><circle cx="100" cy="88" r="7" fill="var(--peach-deep)"/><circle cx="60" cy="104" r="5" fill="var(--line)"/><circle cx="80" cy="104" r="5" fill="var(--line)"/></svg>`,
   first: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--sage-soft)"/><path d="M80 118s-34-20-34-44a17 17 0 0134-6 17 17 0 0134 6c0 24-34 44-34 44z" fill="var(--peach)"/><path d="M80 118s-34-20-34-44a17 17 0 0134-6" fill="none" stroke="var(--surface)" stroke-width="4" stroke-linecap="round"/></svg>`,
+  group: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--sage-soft)"/><path d="M36 62a26 26 0 0126-26h36a26 26 0 0126 26v18a26 26 0 01-26 26H74l-18 16v-16h-6a14 14 0 01-14-14z" fill="var(--surface)"/><circle cx="66" cy="72" r="5" fill="var(--sage)"/><circle cx="82" cy="72" r="5" fill="var(--sage)"/><circle cx="98" cy="72" r="5" fill="var(--sage)"/><circle cx="118" cy="46" r="7" fill="var(--peach)"/></svg>`,
   lock: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--peach-soft)"/><rect x="50" y="72" width="60" height="48" rx="12" fill="var(--surface)"/><path d="M62 72V60a18 18 0 0136 0v12" fill="none" stroke="var(--peach-deep)" stroke-width="6" stroke-linecap="round"/><circle cx="80" cy="96" r="6" fill="var(--peach-deep)"/></svg>`,
 };
 for (const k of Object.keys(ART)) if (BL_SETTINGS.img && BL_SETTINGS.img[k]) ART[k] = `<img class="art" src="${esc(BL_SETTINGS.img[k])}" alt="" loading="lazy">`;
@@ -393,15 +411,23 @@ function renderOnboard(){
   showScreen('screen-onboard');
   const el = $('#screen-onboard');
   const months = []; for (let i = 0; i < 10; i++) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() + i, 1); months.push({v: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'), t: MONTHS_HE[d.getMonth()], yy: d.getFullYear()}); }
-  const dots = `<div class="dots" aria-hidden="true">${[0,1,2].map(i => `<i class="${OB.step===i?'on':''}"></i>`).join('')}</div>`;
+  const steps = obSteps();
+  if (OB.step >= steps.length) OB.step = steps.length - 1;
+  const cur = steps[OB.step];
+  const dots = `<div class="dots" aria-hidden="true">${steps.map(s => `<i class="${cur===s?'on':''}"></i>`).join('')}</div>`;
   let body = '';
-  if (OB.step === 0) body = `${ART.hello}<h1>${T("ob0_title", "היי, ברוכים הבאים")}</h1><p class="lead">${T('ob0_lead', "בעוד רגע תהיה לכם רשימה מסודרת של כל מה שצריך ללידה — עם מחירים אמיתיים מ-{stores} חנויות, והכי זול מסומן.").replace('{stores}', Object.keys(STORES).length)}</p><p class="lead" style="font-size:15px">${T("ob0_sub", "שתי שאלות קצרות, ומתחילים.")}</p><div class="nav"><button class="btn primary big" id="obNext">${T("ob0_btn", "מתחילים")}</button></div>`;
-  if (OB.step === 1) body = `${ART.date}<h1>${T("ob1_title", "מתי התאריך המשוער?")}</h1><p class="lead">${T("ob1_lead", "לפי זה נפרוס את הקניות על החודשים שנשארו.")}</p>
+  if (cur === 'hello') body = `${ART.hello}<h1>${T("ob0_title", "היי, ברוכים הבאים")}</h1><p class="lead">${T('ob0_lead', "בעוד רגע תהיה לכם רשימה מסודרת של כל מה שצריך ללידה — עם מחירים אמיתיים מ-{stores} חנויות, והכי זול מסומן.").replace('{stores}', Object.keys(STORES).length)}</p><p class="lead" style="font-size:15px">${T("ob0_sub", "שתי שאלות קצרות, ומתחילים.")}</p><div class="nav"><button class="btn primary big" id="obNext">${T("ob0_btn", "מתחילים")}</button></div>`;
+  if (cur === 'date') body = `${ART.date}<h1>${T("ob1_title", "מתי התאריך המשוער?")}</h1><p class="lead">${T("ob1_lead", "לפי זה נפרוס את הקניות על החודשים שנשארו.")}</p>
     <div class="month-grid" id="obMonths">${months.map(m => `<button type="button" data-v="${m.v}" aria-pressed="${OB.due?.slice(0,7)===m.v}">${m.t}<br><small style="color:var(--muted);font-weight:400">${m.yy}</small></button>`).join('')}</div>
     <div class="day-row"><label for="obDay" style="font-weight:600">יום</label><select id="obDay">${Array.from({length:31},(_, i) => `<option value="${i+1}" ${OB.due && +OB.due.slice(8)===i+1?'selected':''}>${i+1}</option>`).join('')}</select><span class="muted" style="font-size:14px">לא בטוח/ה? אפשר בערך</span></div>
     <div class="toggle"><span>תאומים או יותר?</span><button type="button" class="switch" id="obTwins" role="switch" aria-checked="${OB.twins}" aria-label="תאומים"></button></div>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext" ${OB.due?'':'disabled'}>המשך</button></div>`;
-  if (OB.step === 2) body = `${ART.first}<h1>${T("ob2_title", "זו הלידה הראשונה?")}</h1><p class="lead">${T("ob2_lead", "ככה נדע כמה להסביר, ומה כנראה כבר יש בבית.")}</p>
+  if (cur === 'wa') body = `${ART.group}<h1>${T("wa_title", "יש קבוצה שמחכה לך")}</h1>
+    <p class="lead">${T("wa_lead", "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה. אני מנהל אותה וזמין שם לשאלות.").replace('{month}', esc(waMonthName(OB.due)))}</p>
+    <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><a class="btn primary big" id="obWaJoin" href="${esc(waLinkFor(OB.due))}" target="_blank" rel="noopener">${T("wa_btn", "הצטרפות לקבוצת הווצאפ של משוערות {month}").replace('{month}', esc(waMonthName(OB.due)))}</a></div>
+    <div style="text-align:center;margin-top:12px"><button type="button" class="linklike" id="obNext">${T("wa_skip", "להמשיך בלי הקבוצה")}</button></div>
+    <p class="tiny">אפשר להצטרף גם אחר כך, מכפתור ההגדרות.</p>`;
+  if (cur === 'first') body = `${ART.first}<h1>${T("ob2_title", "זו הלידה הראשונה?")}</h1><p class="lead">${T("ob2_lead", "ככה נדע כמה להסביר, ומה כנראה כבר יש בבית.")}</p>
     <div class="opts"><button type="button" class="opt" data-f="1" aria-pressed="${OB.first}"><span>כן, לידה ראשונה<small>נלווה אתכם צעד־צעד</small></span></button><button type="button" class="opt" data-f="0" aria-pressed="${!OB.first}"><span>כבר יש ילדים בבית<small>אפשר לסמן מהר "כבר יש לי"</small></span></button></div>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext">${T("ob2_btn", "בונים את הרשימה")}</button></div><p class="tiny">אפשר לשנות הכול אחר כך.</p>`;
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span>${dots}</div><div class="step">${body}</div>`;
@@ -410,8 +436,9 @@ function renderOnboard(){
   $('#obDay', el)?.addEventListener('change', e => { if (OB.due) OB.due = OB.due.slice(0,7) + '-' + String(e.target.value).padStart(2,'0'); });
   $('#obTwins', el)?.addEventListener('click', e => { OB.twins = !OB.twins; e.currentTarget.setAttribute('aria-checked', OB.twins); });
   $$('.opt', el).forEach(b => b.onclick = () => { OB.first = b.dataset.f === '1'; $$('.opt', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  $('#obWaJoin', el)?.addEventListener('click', () => { OB.step++; setTimeout(renderOnboard, 0); });
   $('#obNext', el).onclick = () => {
-    if (OB.step < 2) { OB.step++; renderOnboard(); return; }
+    if (cur !== 'first') { OB.step++; renderOnboard(); return; }
     const editing = !!S.profile;
     S.profile = { due: OB.due, twins: OB.twins, first: OB.first };
     if (editing) { save(); enterApp(); toast('הפרטים עודכנו'); return; }
@@ -475,6 +502,7 @@ function enterApp(){
   $('#footNote').innerHTML = `מזהה גרסה: ${VERSION.v}. המחיר הסופי הוא תמיד המחיר באתר החנות.`;
   fixCustomCats();
   renderAll();
+  renderRefer();
   refreshGiftClaims().then(changed => { if (changed && UI.view === 'list') renderList(); });
   if (!S.tour) setTimeout(() => { if (!S.tour && $('#modalBg').hidden) openTour(); }, 400);   // פעם אחת לכל חשבון
 }
@@ -486,6 +514,30 @@ function fixCustomCats(){
   const live = new Set(CATS); let changed = false;
   S.custom.forEach(c => { if (c.c && !live.has(c.c) && CAT_NEW[c.c]) { c.c = CAT_NEW[c.c]; changed = true; } });
   if (changed) save();
+}
+
+/* ---------- להמליץ לחברה ----------
+   הקישור מוביל לכלי עצמו, לא לרשימה האישית — ולכן אפשר לשלוח אותו לכל אחת.
+   אותה בנייה כמו קישור המתנות: בתצוגה מקדימה של עותק תמה, הקישור פותח את אותו עותק. */
+const REFER_WA_TEXT = T('refer_wa', 'מצאתי כלי שמתכנן את כל הקניות ללידה — רשימה מלאה, מחירים מכל החנויות, והכי זול מסומן. בחינם:');
+function toolLink(){
+  const url = new URL(location.pathname, CONFIG.STORE_HOME);
+  const th = (typeof Shopify !== 'undefined' && Shopify.theme) ? Shopify.theme : null;
+  const pt = new URL(location.href).searchParams.get('preview_theme_id') || (th && th.role && th.role !== 'main' && th.id ? String(th.id) : null);
+  if (pt) url.searchParams.set('preview_theme_id', pt);
+  return url.toString();
+}
+function renderRefer(){
+  const el = $('#refer'); if (!el) return;
+  const link = toolLink();
+  el.innerHTML = `<div class="card"><h3>${T("refer_title", "להמליץ לחברה")}</h3>
+    <p class="why">${T("refer_lead", "מכירה מישהי בהיריון? שלחי לה את הכלי. היא תקבל רשימה מלאה עם מחירים מכל החנויות, בלי תשלום.")}</p>
+    <div class="refer-acts"><a class="btn primary" id="referWa" href="https://wa.me/?text=${encodeURIComponent(REFER_WA_TEXT + '\n' + link)}" target="_blank" rel="noopener">${T("refer_btn", "שליחה לחברה בוואטסאפ")}</a><button type="button" class="btn soft" id="referCopy">העתקת הקישור</button></div></div>`;
+  $('#referCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); }
+    catch(e) { toast('הקישור: ' + link); }
+  };
+  el.hidden = false;
 }
 
 /* ---------- הדרכה קצרה למשתמשת חדשה (פעם אחת, וגם מההגדרות) ---------- */
@@ -603,7 +655,7 @@ function renderList(){
     if (!shown.length && !extra.length) return '';
     const done = its.filter(handled).length;
     const open = expandAll || (S.open != null ? S.open === cat : idx === 0);
-    return `<div class="cat" data-cat="${esc(cat)}" ${open?'open':''}><button type="button" class="hd" aria-expanded="${open}"><header><span class="ico" style="background:var(--surface-2)">${CAT_EMOJI[catKey(cat)] || '🍼'}</span><span class="t"><h2>${esc(cat)}</h2><span class="prog num">${done === its.length ? '✓ הכול טופל' : `${done} מתוך ${its.length} טופלו`}</span></span><svg class="chev"><use href="#i-chev"/></svg></header></button>
+    return `<div class="cat" data-cat="${esc(cat)}" ${open?'open':''}><button type="button" class="hd" aria-expanded="${open}"><header><span class="ico" style="background:var(--surface-2)">${catIcon(catKey(cat))}</span><span class="t"><h2>${esc(cat)}</h2><span class="prog num">${done === its.length ? '✓ הכול טופל' : `${done} מתוך ${its.length} טופלו`}</span></span><svg class="chev"><use href="#i-chev"/></svg></header></button>
       <div class="bar"><i style="width:${Math.round(done/its.length*100)}%"></i></div><div class="items">${shown.map(renderItem).join('')}${extra.map(renderCustomItem).join('')}</div></div>`;
   }).join('');
   $$('#cats .cat .hd').forEach(b => b.onclick = () => {
@@ -1233,13 +1285,43 @@ async function saveStructure(msg){
   toast((await saveOverrides()) ? msg : 'השינוי מוצג אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
   adminStructure();
 }
+/* ---------- קבוצות וואטסאפ (דניאל) ----------
+   שורה לכל חודש שהאישה יכולה לבחור בשאלת התאריך, ועוד כל חודש שכבר יש לו קישור.
+   נשמר ב-OVERRIDES.wa יחד עם שאר תיקוני המנהל — ולכן קבוצה חדשה נכנסת לכלי
+   תוך כדקה, בלי לגעת בעורך התמה ובלי פרסום.                                       */
+function adminWaGroups(){
+  const cur = waGroups();
+  const keys = [];
+  for (let i = 0; i < 12; i++) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() + i, 1); keys.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')); }
+  Object.keys(cur).forEach(k => { if (/^\d{4}-\d{2}$/.test(k) && !keys.includes(k)) keys.push(k); });
+  keys.sort();
+  openModal(`<h2>קבוצות וואטסאפ</h2>
+    <p style="font-size:13.5px;margin-bottom:10px">לכל חודש משוער קבוצה משלו. אישה שבחרה תאריך בחודש שיש לו קישור כאן, מקבלת מיד אחרי שאלת התאריך הצעה להצטרף — וגם כפתור קבוע בהגדרות. חודש בלי קישור מדולג בשקט, והיא לא רואה כלום.</p>
+    <div id="waRows">${keys.map(k => `<div class="field"><label for="wa-${k}">${esc(waMonthName(k))}</label><input id="wa-${k}" data-wa="${k}" type="url" dir="ltr" placeholder="https://chat.whatsapp.com/…" value="${esc(cur[k] || '')}"></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="waCancel">סגירה</button><button type="button" class="btn primary" id="waSave">שמירה</button></div>
+    <div class="admin-hint">את הקישור מוציאים מהוואטסאפ עצמו: פרטי הקבוצה ← הזמנה באמצעות קישור ← העתקת קישור. כדי להוריד קבוצה — מוחקים את השורה ושומרים.</div>`);
+  $('#waCancel').onclick = closeModal;
+  $('#waSave').onclick = async () => {
+    const next = {}; const bad = [];
+    $$('#waRows [data-wa]').forEach(inp => {
+      const v = String(inp.value || '').trim();
+      if (!v) return;
+      if (!/^https:\/\//i.test(v)) { bad.push(waMonthName(inp.dataset.wa)); return; }
+      next[inp.dataset.wa] = v;
+    });
+    if (bad.length) return toast('קישור לא תקין ב' + bad.join(', ') + ' — קישור מתחיל ב-https://');
+    OVERRIDES.wa = next;
+    closeModal();
+    toast((await saveOverrides()) ? `נשמרו ${Object.keys(next).length} קבוצות ✓` : 'השינוי מוצג אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
+  };
+}
 function adminStructure(){
   const ov = ovItems();
   const newCats = (ov.cats || {}).add || [];
   const emptyNew = newCats.map(cleanName).filter(c => c && !CATS.includes(c));
   const byCat = {}; ITEMS.forEach(i => (byCat[i.c] = byCat[i.c] || []).push(i));
   const catRow = (c, empty) => `<div class="st-row"><div class="st-main">
-      <div class="st-t">${CAT_EMOJI[catKey(c)] || ''} ${esc(c)}${CAT_ORIG[c] ? ` <span class="st-s">(היה: ${esc(CAT_ORIG[c])})</span>` : ''}</div>
+      <div class="st-t">${catIcon(catKey(c))} ${esc(c)}${CAT_ORIG[c] ? ` <span class="st-s">(היה: ${esc(CAT_ORIG[c])})</span>` : ''}</div>
       <div class="st-s">${empty ? 'חדשה — עוד אין בה תת-קטגוריות' : `${(byCat[c] || []).length} תת-קטגוריות`}</div></div>
       <div class="row-btns"><button type="button" class="btn ghost small" data-cren="${esc(c)}">שינוי שם</button><button type="button" class="btn soft small" data-cadd="${esc(c)}">תת-קטגוריה חדשה</button></div></div>`;
   const itemRow = it => `<div class="st-row"><div class="st-main">
@@ -1559,10 +1641,11 @@ function openManual(itemId, cat){
     <div class="field two"><div class="field"><label for="mfPrice">מחיר (₪)</label><input id="mfPrice" type="number" min="0" step="0.1" inputmode="decimal"></div><div class="field"><label for="mfQty">כמות</label><input id="mfQty" type="number" min="1" value="${it ? defaultQty(it) : 1}" inputmode="numeric"></div></div>
     <div class="field"><label for="mfUrl">קישור (לא חובה)</label><input id="mfUrl" type="url" dir="ltr" placeholder="https://"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="mfCancel">ביטול</button><button type="button" class="btn primary" id="mfSave">הוספה לרשימה</button></div>
-    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button><button type="button" class="btn soft small" id="mfAdminRemoved">מוצרים שהסרתי</button><button type="button" class="btn soft small" id="mfAdminStruct">מבנה הרשימה</button><button type="button" class="btn soft small" id="mfAdminStatus">מצב הכלי</button></div></div>` : ''}`);
+    ${IS_ADMIN ? `<div class="admin-box"><div class="ttl">מנהל</div><div class="row-btns"><button type="button" class="btn soft small" id="mfAdminAll">הוספת מוצר לכולן — מקישור לחנות</button><button type="button" class="btn soft small" id="mfAdminRemoved">מוצרים שהסרתי</button><button type="button" class="btn soft small" id="mfAdminStruct">מבנה הרשימה</button><button type="button" class="btn soft small" id="mfAdminWa">קבוצות וואטסאפ</button><button type="button" class="btn soft small" id="mfAdminStatus">מצב הכלי</button></div></div>` : ''}`);
   $('#mfAdminAll')?.addEventListener('click', () => { closeModal(); adminManualProducts(); });
   $('#mfAdminRemoved')?.addEventListener('click', () => { closeModal(); adminRemovedList(null); });
   $('#mfAdminStruct')?.addEventListener('click', () => { closeModal(); adminStructure(); });
+  $('#mfAdminWa')?.addEventListener('click', () => { closeModal(); adminWaGroups(); });
   $('#mfAdminStatus')?.addEventListener('click', () => { closeModal(); adminStatus(); });
   if (!it) {
     const fillItems = () => { const c = $('#mfCat').value; $('#mfItem').innerHTML = `<option value="">פריט חדש — לא מהרשימה</option>` + ITEMS.filter(i => i.c === c).map(i => `<option value="${i.id}">${esc(i.n)}</option>`).join(''); $('#mfNameWrap').hidden = false; };
@@ -1603,10 +1686,10 @@ function renderBudget(){
       ${giftOpen.length ? `<div class="why" style="margin-top:6px">כולל ${giftOpen.length} שביקשתם במתנה — נספרים עד שמישהו יתפוס אותם.</div>` : ''}
       ${off.length ? `<div class="why" style="margin-top:6px">לא נספרים כאן: ${off.join(' · ')}</div>` : ''}
       <p class="why">${open.length ? `עוד ${open.length} פריטים לא טופלו${openMust.length ? ` (${openMust.length} מהם חובה)` : ''} — הסכום יגדל.` : 'כל הפריטים טופלו'} מחירים לפי הבדיקה האחרונה; המחיר הסופי הוא באתר החנות.</p></div>
-    <div class="card"><h3>לפי קטגוריה</h3><div class="kv">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c, v]) => `<span>${CAT_EMOJI[catKey(c)]||''} ${esc(c)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">עדיין לא נבחרו מוצרים</span>'}</div></div>
+    <div class="card"><h3>לפי קטגוריה</h3><div class="kv">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c, v]) => `<span>${catIcon(catKey(c))} ${esc(c)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">עדיין לא נבחרו מוצרים</span>'}</div></div>
     <div class="card"><h3>לפי חנות</h3><p class="why" style="margin:0 0 8px">לחיצה על חנות מסננת את הרשימה המלאה למטה.</p><div class="kv kv-click">${Object.entries(byStore).sort((a,b)=>b[1]-a[1]).map(([s, v]) => `<button type="button" data-bstore="${esc(s)}" class="${UI.bstore === s ? 'on' : ''}">${esc(s)}</button><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
     <div class="card"><h3>הרשימה המלאה${UI.bstore ? ` — ${esc(UI.bstore)}` : ''}</h3>${UI.bstore ? `<p class="why" style="margin:0 0 8px">${shown.length} מוצרים מ${esc(UI.bstore)} · ${nis(totalBuy(shown))} <button type="button" class="linklike" id="bStoreAll" style="margin-inline-start:8px">להצגת כל החנויות</button></p>` : ''}<div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${shown.map(l => { const g = giftLabel(l), q = buyQty(l) || (l.qty || 1);
-      return `<tr><td><span class="nm">${esc(l.name)}</span><br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}${g && g.note ? ' · ' + g.note : ''}</small>${g ? `<br><span class="tag ${g.cls}">${g.t}</span>` : ''}</td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">אין מוצרים להצגה</td></tr>'}</tbody></table></div></div>`;
+      return `<tr><td><span class="nm">${esc(l.name)}</span><br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}${g && g.note ? ' · ' + g.note : ''}</small>${g ? `<div class="tagline"><span class="tag ${g.cls}">${g.t}</span></div>` : ''}</td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">אין מוצרים להצגה</td></tr>'}</tbody></table></div></div>`;
   bindBudget();
 }
 
@@ -1894,7 +1977,7 @@ async function giftUnclaim(lineKey, token){
 /* ---------- הגדרות ---------- */
 $('#btnSettings').onclick = () => {
   openModal(`<h2>הגדרות</h2><p>מחובר/ת לחשבון בחנות.</p>
-    <div style="display:grid;gap:8px"><button type="button" class="btn soft" id="optTour">הדרכה — איך עובדים עם הכלי</button><button type="button" class="btn soft" id="optProfile">שינוי תאריך / תאומים</button><button type="button" class="btn soft" id="optSignOut">יציאה מהחשבון</button><button type="button" class="btn ghost" id="optClose">סגירה</button></div>
+    <div style="display:grid;gap:8px">${waLinkFor(S.profile?.due) ? `<a class="btn soft" id="optWa" href="${esc(waLinkFor(S.profile.due))}" target="_blank" rel="noopener">קבוצת הוואטסאפ של משוערות ${esc(waMonthName(S.profile.due))}</a>` : ''}<button type="button" class="btn soft" id="optTour">הדרכה — איך עובדים עם הכלי</button><button type="button" class="btn soft" id="optProfile">שינוי תאריך / תאומים</button><button type="button" class="btn soft" id="optSignOut">יציאה מהחשבון</button><button type="button" class="btn ghost" id="optClose">סגירה</button></div>
     <p class="why" style="text-align:center">גרסת נתונים ${VERSION.v} · ${MODELS.length.toLocaleString('he-IL')} מוצרים</p>`);
   $('#optTour').onclick = () => { closeModal(); openTour(); };
   $('#optProfile').onclick = () => { closeModal(); editProfile(); };
