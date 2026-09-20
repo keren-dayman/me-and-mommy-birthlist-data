@@ -179,7 +179,7 @@
 #bl .item .main{min-width:0}
 #bl .item .name{font-weight:700;font-size:16.5px}
 #bl .item .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
-#bl .tag{font-size:12px;font-weight:700;border-radius:8px;padding:2px 8px;white-space:nowrap}
+#bl .tag{display:inline-block;font-size:12px;font-weight:700;border-radius:8px;padding:2px 8px;line-height:1.5;max-width:100%;white-space:normal;overflow-wrap:anywhere;vertical-align:middle}
 #bl .tag.must{background:var(--rose-soft);color:var(--rose)}
 #bl .tag.rec{background:var(--amber-soft);color:var(--amber)}
 #bl .tag.opt{background:var(--surface-2);color:var(--ink-2)}
@@ -295,11 +295,22 @@
 #bl .gift .t{font-weight:700}
 #bl .gift .m{font-size:13px;color:var(--muted)}
 #bl .gift .p{font-family:var(--font-head);grid-row:span 2;white-space:nowrap}
+/* "מגיע במתנה" — גוש נפרד, כדי שיהיה ברור שמכאן ולמטה כבר לא קונים */
+#bl .given-box{margin-top:22px;padding:14px 12px 4px;border-radius:var(--r);background:var(--sage-soft);border:1px dashed var(--sage)}
+#bl .given-box .given-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+#bl .given-box .given-head h3{font-size:18px;color:var(--sage)}
+#bl .given-box .given-head span{font-family:var(--font-head);background:var(--surface);color:var(--sage);border-radius:999px;padding:1px 10px;font-size:14px}
+#bl .given-box .why{margin:0 0 10px}
+#bl .given-box .gift{box-shadow:none;border:1px solid var(--line)}
+
 /* הדרכה */
 #bl .tour-dots{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
 #bl .tour-dots i{width:7px;height:7px;border-radius:999px;background:var(--line)}
 #bl .tour-dots i.on{background:var(--peach);width:18px}
 #bl .tour-img{width:100%;max-width:320px;height:auto;border-radius:14px;border:1px solid var(--line)}
+/* כפתור שהוא טקסט בלבד */
+#bl .linklike{color:var(--peach-ink);font-weight:700;font-size:14.5px;text-decoration:underline;text-underline-offset:3px;padding:4px 8px}
+#bl .linklike[disabled]{color:var(--muted);text-decoration:none}
 #bl .linkbox{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #bl .linkbox textarea{width:100%;height:160px;font-size:13.5px;resize:vertical}
 
@@ -309,9 +320,9 @@
 #bl .modal h2{font-size:23px;margin-bottom:4px}
 #bl .modal p{margin:0 0 14px;color:var(--ink-2)}
 #bl .field{display:grid;gap:6px;margin-bottom:12px}
-/* טופס נקי: תווית ושורת מילוי, בלי מלבן סביב כל שדה */
-#bl .modal .field input,#bl .modal .field select,#bl .modal .field textarea{background:transparent;border:0;border-bottom:1.5px solid var(--line);border-radius:0;padding:8px 2px}
-#bl .modal .field input:focus,#bl .modal .field select:focus,#bl .modal .field textarea:focus{border-bottom-color:var(--peach-deep)}
+/* טופס נקי: שורת מילוי לבנה, בלי מסגרת חיצונית */
+#bl .modal .field input,#bl .modal .field select,#bl .modal .field textarea{background:var(--surface);border:0;border-radius:12px;padding:11px 12px}
+#bl .modal .field input:focus,#bl .modal .field select:focus,#bl .modal .field textarea:focus{outline:2px solid var(--peach-deep);outline-offset:0}
 #bl .modal .field input[readonly]{color:var(--muted)}
 #bl .field label{font-weight:600;font-size:15px}
 #bl .field.two{grid-template-columns:1fr 1fr;gap:8px}

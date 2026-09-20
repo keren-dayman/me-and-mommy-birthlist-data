@@ -1583,7 +1583,7 @@ function renderBudget(){
     <div class="card"><h3>לפי קטגוריה</h3><div class="kv">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c, v]) => `<span>${CAT_EMOJI[catKey(c)]||''} ${esc(c)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">עדיין לא נבחרו מוצרים</span>'}</div></div>
     <div class="card"><h3>לפי חנות</h3><div class="kv">${Object.entries(byStore).sort((a,b)=>b[1]-a[1]).map(([s, v]) => `<span>${esc(s)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
     <div class="card"><h3>הרשימה המלאה</h3><div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${ls_.map(l => { const g = giftLabel(l), q = buyQty(l) || (l.qty || 1);
-      return `<tr><td>${esc(l.name)}${g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}<br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}</small></td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">הרשימה ריקה עדיין</td></tr>'}</tbody></table></div></div>`;
+      return `<tr><td>${esc(l.name)}${g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}<br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}${g && g.note ? ' · ' + g.note : ''}</small></td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">הרשימה ריקה עדיין</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* ---------- לפי חודשים — הטבלה BUY_MONTHS_BEFORE, ואז איזון ההוצאה ----------
@@ -1687,18 +1687,19 @@ function giftLabel(l){
   if (l.who === 'given') return { t: 'מתקבל במתנה', cls: 'best' };
   if (l.who !== 'gift') return null;
   const q = l.qty || 1, c = Math.min(q, claimedOf(l.key));
-  if (c >= q) return { t: 'מתקבל במתנה', cls: 'best' };
-  if (c > 0)  return { t: `מבוקש כמתנה · ${c} מתוך ${q} נתפסו`, cls: 'gift' };
-  return { t: 'מבוקש כמתנה', cls: 'gift' };
+  // התווית קצרה תמיד ובאותו אורך — הפירוט יושב בשורת הפרטים, לא בתוך התווית
+  return c >= q ? { t: 'מתקבל במתנה', cls: 'best' }
+                : { t: 'מבוקש כמתנה', cls: 'gift', note: c > 0 ? `${c} מתוך ${q} כבר נתפסו` : '' };
 }
 function renderGifts(){
   const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift'), given = ls_.filter(l => l.who === 'given');
   const row = g => `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}${giftBadge(g.key, g.qty, false)}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
   $('#view-gifts').innerHTML = `<div class="card"><div class="bigline"><b class="num">${gs.length}</b><span class="muted">מתנות לבקש · שווי ${nis(total(gs))}</span></div>
-      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn primary big" id="btnShareGifts" href="#" target="_blank" rel="noopener" ${gs.length?'':'aria-disabled="true"'}>שיתוף רשימת המתנות</a><button type="button" class="btn soft" id="btnGiftLink" ${gs.length?'':'disabled'}>אפשרויות הקישור</button></div>
+      <div style="margin-top:14px"><a class="btn primary big" id="btnShareGifts" href="#" target="_blank" rel="noopener" ${gs.length?'':'aria-disabled="true"'}>שיתוף רשימת המתנות</a>
+        <div style="text-align:center;margin-top:10px"><button type="button" class="linklike" id="btnGiftLink" ${gs.length?'':'disabled'}>אפשרויות הקישור</button></div></div>
       <p class="why">${gs.length ? 'הכפתור פותח וואטסאפ עם קישור אישי לרשימה. מי שמקבל אותו בוחר מתנה ומסמן שהוא מביא אותה — בלי חשבון — וזה מסומן לכם ברשימה ויורד מהתקציב. ב"אפשרויות הקישור" אפשר להעתיק את הקישור או ליצור קישור חדש שמבטל את הישן.' : 'כדי לבקש מוצר במתנה: ברשימה, על מוצר שנבחר, לוחצים "לבקש במתנה".'}</p></div>
     ${gs.map(row).join('')}
-    ${given.length ? `<div class="card" style="margin-top:16px"><h3>מגיע במתנה</h3><p class="why" style="margin:0 0 8px">מוצרים שמישהו כבר קונה — לא נספרים בסיכום.</p></div>${given.map(row).join('')}` : ''}`;
+    ${given.length ? `<div class="given-box"><div class="given-head"><h3>מגיע במתנה</h3><span>${given.length}</span></div><p class="why">מכאן ולמטה — מוצרים שמישהו כבר קונה. הם לא נספרים בסיכום.</p>${given.map(row).join('')}</div>` : ''}`;
   // הכפתור הוא קישור אמיתי לוואטסאפ: הטוקן נטען ברקע ונכנס ל-href, כך שההקשה עצמה לא נחסמת כחלון קופץ
   const share = $('#btnShareGifts');
   if (gs.length) ensureGiftLink().then(t => { if (t && $('#btnShareGifts') === share) share.href = 'https://wa.me/?text=' + encodeURIComponent(GIFT_WA_TEXT(giftShareLink(t))); });
