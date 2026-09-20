@@ -423,7 +423,7 @@ function renderOnboard(){
     <div class="toggle"><span>תאומים או יותר?</span><button type="button" class="switch" id="obTwins" role="switch" aria-checked="${OB.twins}" aria-label="תאומים"></button></div>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext" ${OB.due?'':'disabled'}>המשך</button></div>`;
   if (cur === 'wa') body = `${ART.group}<h1>יש קבוצה שמחכה לך</h1>
-    <p class="lead">${T("wa_lead", "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה. אני מנהל אותה וזמין שם לשאלות.").replace('{month}', esc(waMonthName(OB.due)))}</p>
+    <p class="lead">${T("wa_lead", "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה.").replace('{month}', esc(waMonthName(OB.due)))}</p>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><a class="btn primary big" id="obWaJoin" href="${esc(waLinkFor(OB.due))}" target="_blank" rel="noopener">${T("wa_btn", "הצטרפות לקבוצת הווצאפ של משוערות {month}").replace('{month}', esc(waMonthName(OB.due)))}</a></div>
     <div style="text-align:center;margin-top:12px"><button type="button" class="linklike" id="obNext">להמשיך בלי הקבוצה</button></div>
     <p class="tiny">אפשר להצטרף גם אחר כך, מכפתור ההגדרות.</p>`;
@@ -530,13 +530,11 @@ function toolLink(){
 function renderRefer(){
   const el = $('#refer'); if (!el) return;
   const link = toolLink();
-  el.innerHTML = `<div class="card"><h3>להמליץ לחברה</h3>
-    <p class="why">${T("refer_lead", "מכירה מישהי בהיריון? שלחי לה את הכלי. היא תקבל רשימה מלאה עם מחירים מכל החנויות, בלי תשלום.")}</p>
-    <div class="refer-acts"><a class="btn primary" id="referWa" href="https://wa.me/?text=${encodeURIComponent(REFER_WA_TEXT + '\n' + link)}" target="_blank" rel="noopener">${T("refer_btn", "שליחה לחברה בוואטסאפ")}</a><button type="button" class="btn soft" id="referCopy">העתקת הקישור</button></div></div>`;
-  $('#referCopy').onclick = async () => {
-    try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); }
-    catch(e) { toast('הקישור: ' + link); }
-  };
+  el.innerHTML = `<div class="refer-card">
+    <div class="refer-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.4c0 3.9-4 7-9 7-1 0-2-.1-2.9-.4L4 20l1.2-3.4A6.8 6.8 0 0 1 3 11.4c0-3.9 4-7 9-7s9 3.1 9 7z"/><path d="M12 14.3s-3-1.8-3-3.8a1.55 1.55 0 0 1 3-.55 1.55 1.55 0 0 1 3 .55c0 2-3 3.8-3 3.8z"/></svg></div>
+    <h3>המלצה לחבר/ה</h3>
+    <p>${T("refer_lead", "מכירים עוד שמתכוננים ללידה ולא יודעים מה לקנות? שלחו להם, שייהנו גם הם מרשימה מלאה, מחירים ותכנון נכון.")}</p>
+    <a class="btn refer-wa" id="referWa" href="https://wa.me/?text=${encodeURIComponent(REFER_WA_TEXT + '\n' + link)}" target="_blank" rel="noopener">${T("refer_btn", "לשלוח בוואטסאפ")}</a></div>`;
   el.hidden = false;
 }
 
