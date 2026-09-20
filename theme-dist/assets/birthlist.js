@@ -697,7 +697,7 @@ function renderModels(){
 function renderPickBar(){
   const bar = $('#msAdminBar'); if (!bar) return;
   if (!MS.pick) {
-    bar.innerHTML = `<button type="button" class="btn soft small" id="msPickOn">סימון מרובה</button>`;
+    bar.innerHTML = `<button type="button" class="btn soft small" id="msPickOn">סימון מרובה — לאיחוד או להעברה</button>`;
     $('#msPickOn').onclick = () => { MS.pick = []; renderModels(); };
     return;
   }
@@ -782,6 +782,7 @@ function openModel(mid){
     $('[data-adm="rename"]', $('#sheet'))?.addEventListener('click', () => adminRename(m));
     $('[data-adm="move"]', $('#sheet'))?.addEventListener('click', () => adminMove(m));
     $('[data-adm="img"]', $('#sheet'))?.addEventListener('click', () => adminImage(m));
+    $('[data-adm="compare"]', $('#sheet'))?.addEventListener('click', () => adminCompare(m));
     $$('[data-admhs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = [...(ovOf(m.id).hs || []), b.dataset.admhs]; closeSheet(); adminApply(m.id, {hs}, 'החנות הוסתרה מהמוצר הזה'); });
     $$('[data-admrs]', $('#sheet')).forEach(b => b.onclick = () => { const hs = (ovOf(m.id).hs || []).filter(s => s !== b.dataset.admrs); closeSheet(); adminApply(m.id, {hs}, 'החנות הוחזרה ✓'); });
     $$('[data-admurl]', $('#sheet')).forEach(b => b.onclick = () => adminEditUrl(m, b.dataset.admurl));
@@ -1131,7 +1132,8 @@ function adminBox(m){
       <button type="button" class="btn soft small" data-adm="rename">שינוי שם</button>
       <button type="button" class="btn soft small" data-adm="move">העברת קטגוריה</button>
       <button type="button" class="btn soft small" data-adm="img">החלפת תמונה</button>
-    </div>${m.offers.length > 1 ? `<div class="admin-hint">חנות שמוכרת כאן בפועל מוצר אחר — "לא שייך" מפריד אותה לשורה משלה. זה שונה מ"הסתרה", שמוחקת אותה מהתצוגה לגמרי.</div>` : ''}${storeRows}${restoreRows}
+      <button type="button" class="btn soft small" data-adm="compare">הוספת חנות להשוואה</button>
+    </div><div class="admin-hint">לאיחוד שני מוצרים או להעברה של כמה מוצרים יחד — "סימון מרובה" בראש גלריית המוצרים של הפריט.</div>${m.offers.length > 1 ? `<div class="admin-hint">חנות שמוכרת כאן בפועל מוצר אחר — "לא שייך" מפריד אותה לשורה משלה. זה שונה מ"הסתרה", שמוחקת אותה מהתצוגה לגמרי.</div>` : ''}${storeRows}${restoreRows}
     <div class="admin-hint">השינוי נשמר לכולן תוך כדקה, ונכנס לקובץ לצמיתות בעדכון הלילי.</div></div>`;
 }
 function adminRename(m){
@@ -1155,6 +1157,9 @@ function adminMove(m){
    הכל נשמר ב-OVERRIDES.items, באותו מבנה שה-build קורא בלילה. אף פעולה כאן לא
    מוחקת כלום ולא נוגעת במזהים — ולכן רשימה שמורה של אמא לא יכולה להיפגע.        */
 function ovItems(){ return (OVERRIDES.items = OVERRIDES.items || {}); }
+// המסך נבנה מחדש אחרי כל פעולה — בלי זה הוא היה קופץ בכל פעם לראש הרשימה
+let STRUCT_SCROLL = 0;
+const structKeep = () => { STRUCT_SCROLL = $('#modal')?.scrollTop || 0; };
 async function saveStructure(msg){
   prepareData(); fixCustomCats(); renderAll();
   toast((await saveOverrides()) ? msg : 'השינוי מוצג אצלך, אבל השמירה נכשלה — לנסות שוב');
@@ -1187,12 +1192,13 @@ function adminStructure(){
     <div class="ttl">תתי-קטגוריות (${ITEMS.length})</div>
     ${CATS.map(c => `<div class="st-s" style="margin:10px 0 4px;font-weight:700">${esc(c)}</div>${(byCat[c] || []).map(itemRow).join('')}`).join('')}
     <div style="display:flex;justify-content:flex-end;margin-top:14px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>`);
-  $('#stClose').onclick = closeModal;
-  $('#stAddCat').onclick = () => structAddCat();
-  $$('[data-cren]', $('#modal')).forEach(b => b.onclick = () => structRenameCat(b.dataset.cren));
-  $$('[data-cadd]', $('#modal')).forEach(b => b.onclick = () => structAddItem(b.dataset.cadd));
-  $$('[data-iren]', $('#modal')).forEach(b => b.onclick = () => structRenameItem(+b.dataset.iren));
-  $$('[data-itag]', $('#modal')).forEach(b => b.onclick = () => structTag(+b.dataset.itag));
+  $('#stClose').onclick = () => { STRUCT_SCROLL = 0; closeModal(); };
+  $('#stAddCat').onclick = () => { structKeep(); structAddCat(); };
+  $$('[data-cren]', $('#modal')).forEach(b => b.onclick = () => { structKeep(); structRenameCat(b.dataset.cren); });
+  $$('[data-cadd]', $('#modal')).forEach(b => b.onclick = () => { structKeep(); structAddItem(b.dataset.cadd); });
+  $$('[data-iren]', $('#modal')).forEach(b => b.onclick = () => { structKeep(); structRenameItem(+b.dataset.iren); });
+  $$('[data-itag]', $('#modal')).forEach(b => b.onclick = () => { structKeep(); structTag(+b.dataset.itag); });
+  if (STRUCT_SCROLL) { const el = $('#modal'); el.scrollTop = STRUCT_SCROLL; requestAnimationFrame(() => { el.scrollTop = STRUCT_SCROLL; }); }
 }
 function structAddCat(){
   openModal(`<h2>קטגוריה חדשה</h2><p style="font-size:14px">הקטגוריה תופיע לנשים רק אחרי שתהיה בה תת-קטגוריה עם מוצרים — כך שאף אחת לא תראה מדור ריק.</p>
@@ -1273,6 +1279,50 @@ function structTag(id){
     if (added) added.t = v;
     else { ov.tag = ov.tag || {}; ov.tag[id] = v; }
     closeModal(); saveStructure(`"${it.n}" סומנה כ${v}`);
+  };
+}
+
+/* ---------- הוספת חנות להשוואה (מנהל) ----------
+   מוצר שנמצא אצלנו בחנות אחת בלבד, ובפועל נמכר בעוד אחת מהחנויות שאנחנו סורקים:
+   מדביקים את הקישור מהחנות השנייה, והשורות מתאחדות לשורה אחת עם השוואת מחיר.
+   מתחת למכסה המנוע זה בדיוק אותו `overrides.merge` — ולכן גם ניתן לביטול במסך "מצב הכלי". */
+function urlKey(u){
+  try { const x = new URL(u); return x.hostname.replace(/^www\./, '') + x.pathname.replace(/\.html$/, '').replace(/\/+$/, ''); }
+  catch (e) { return ''; }
+}
+function findModelByUrl(u){
+  const k = urlKey(u); if (!k) return null;
+  for (const m of Object.values(modelById)) for (const o of (m.offers || [])) if (urlKey(o.u) === k) return { m, sid: o.sid };
+  return null;
+}
+function adminCompare(m){
+  openModal(`<h2>הוספת חנות להשוואה</h2>
+    <p style="font-size:14px">"${esc(m.n)}" מוצג כרגע ב-${m.offers.length === 1 ? 'חנות אחת' : `${m.offers.length} חנויות`}. אם אותו מוצר בדיוק נמכר בעוד אחת מהחנויות שלנו — מדביקים כאן את הקישור לדף המוצר שם, והשורות יתאחדו לשורה אחת עם השוואת מחיר.</p>
+    <div class="field"><label for="admCmpUrl">קישור לדף המוצר בחנות השנייה</label><input id="admCmpUrl" type="url" dir="ltr" placeholder="https://"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admFind">חיפוש</button></div>`);
+  $('#admCancel').onclick = closeModal;
+  $('#admFind').onclick = () => {
+    const u = $('#admCmpUrl').value.trim();
+    const hit = findModelByUrl(u);
+    if (!hit) return toast('לא מצאתי את הקישור הזה בסריקה — אם המוצר לא אצלנו, קודם "הוספת מוצר לכולן"');
+    if (hit.m.id === m.id) return toast('זה כבר אותו מוצר');
+    const joined = new Set((OVERRIDES.merge || []).flat());
+    if (joined.has(hit.m.id) || joined.has(m.id)) return toast('אחד המוצרים כבר אוחד — אפשר לבטל את האיחוד הקודם במסך "מצב הכלי"');
+    const cross = hit.m.i !== m.i;
+    openModal(`<h2>לאחד?</h2>
+      <p style="font-size:14px">מצאתי בחנות <b>${esc(STORES[hit.sid].n)}</b>:</p>
+      <div class="store"><div class="l1"><span class="sc">${esc(hit.m.n)}</span><span class="p num">${nis(hit.m.min)}</span></div>
+        <div class="meta"><span>${esc(itemById[hit.m.i] ? itemById[hit.m.i].n : 'פריט ' + hit.m.i)}${hit.m.brand ? ' · ' + esc(hit.m.brand) : ''}</span></div></div>
+      <p style="font-size:14px">אחרי האיחוד תישאר שורה אחת — <b>"${esc(m.n)}"</b> — עם המחירים משתי החנויות.${cross ? ' המוצר השני יועבר גם לאותה תת-קטגוריה.' : ''}</p>
+      <p class="why">נכנס לקובץ בעדכון הלילי. ניתן לביטול במסך "מצב הכלי", תחת "מוצרים שאיחדת".</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="admCancel2">ביטול</button><button type="button" class="btn primary" id="admJoin">לאחד</button></div>`);
+    $('#admCancel2').onclick = closeModal;
+    $('#admJoin').onclick = async () => {
+      if (cross) setOverride(hit.m.id, { item: m.i });     // איחוד חוצה-פריטים נדחה במנוע — מיישרים קודם
+      (OVERRIDES.merge = OVERRIDES.merge || []).push([m.id, hit.m.id]);
+      closeModal(); closeSheet();
+      toast((await saveOverrides()) ? 'יתאחדו לשורה אחת בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+    };
   };
 }
 
@@ -1449,7 +1499,8 @@ function renderBudget(){
       <p class="why">${open.length ? `עוד ${open.length} פריטים לא טופלו${openMust.length ? ` (${openMust.length} מהם חובה)` : ''} — הסכום יגדל.` : 'כל הפריטים טופלו'} מחירים לפי הבדיקה האחרונה; המחיר הסופי הוא באתר החנות.</p></div>
     <div class="card"><h3>לפי קטגוריה</h3><div class="kv">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c, v]) => `<span>${CAT_EMOJI[catKey(c)]||''} ${esc(c)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">עדיין לא נבחרו מוצרים</span>'}</div></div>
     <div class="card"><h3>לפי חנות</h3><div class="kv">${Object.entries(byStore).sort((a,b)=>b[1]-a[1]).map(([s, v]) => `<span>${esc(s)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
-    <div class="card"><h3>הרשימה המלאה</h3><div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${buy.map(l => `<tr><td>${esc(l.name)}${l.who === 'gift' ? ' <span class="tag gift">מתנה</span>' : ''}<br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}</small></td><td>${esc(l.store)}</td><td class="n num">${buyQty(l)}${buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">הרשימה ריקה עדיין</td></tr>'}</tbody></table></div></div>`;
+    <div class="card"><h3>הרשימה המלאה</h3><div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${ls_.map(l => { const g = giftLabel(l), q = buyQty(l) || (l.qty || 1);
+      return `<tr><td>${esc(l.name)}${g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}<br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}</small></td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">הרשימה ריקה עדיין</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* ---------- לפי חודשים — הטבלה BUY_MONTHS_BEFORE, ואז איזון ההוצאה ----------
@@ -1513,7 +1564,7 @@ function renderMonths(){
   const sum = plan.reduce((a, m) => a + m.sum, 0), nItems = plan.reduce((a, m) => a + m.items.length, 0);
   const nMoved = plan.reduce((a, m) => a + m.items.filter(x => x.moved > 0).length, 0);
   $('#view-months').innerHTML = `<div class="card"><div class="bigline"><b class="num">${nis(sum)}</b><span class="muted">${nItems} פריטים על פני ${plan.length} חודשים</span></div><p class="why">לפי ההמלצה של me &amp; mommy מתי לקנות כל קטגוריה, ${nMoved ? 'ומחולק כך שההוצאה תתפזר בין החודשים ולא תיפול על חודש אחד' : 'ובתוספת איזון של ההוצאה בין החודשים'}. המוצרים הגדולים נשארים במועד שלהם. פריט בלי מחיר = עוד לא נבחר לו מוצר. <button type="button" class="btn small ghost" id="editDue" style="padding:2px 8px;color:var(--peach-ink)">תאריך: ${esc(dueText())} ✎</button></p></div>
-    <div class="tl">${plan.map(m => `<div class="month"><div class="card"><header><h3>${MONTHS_HE[m.m]} ${m.y}</h3><b class="num">${nis(m.sum)}</b></header>${m.items.length ? `<ul>${m.items.map(({name, it, ls: ls_, nb, moved}) => { const buy = toBuy(ls_), others = ls_.length - buy.length; return `<li class="${ls_.length?'':'open'}"><span><span class="n">${esc(name)}</span><small>${ls_.length ? `${ls_.map(l => esc(l.name)).join(' + ')}${others ? ` · ${others} במתנה` : ''}` : 'עוד לא נבחר מוצר'}${nb ? ` · מומלץ כ-${nb} חודשים לפני` : ' · סמוך ללידה'}${moved ? ` · הוקדם ב-${moved} ${moved === 1 ? 'חודש' : 'חודשים'} לאיזון ההוצאה` : ''}</small></span><span class="num" style="font-weight:700">${ls_.length ? nis(totalBuy(ls_)) : (it ? '<button type="button" class="btn small soft" data-pick="' + it.id + '">לבחור</button>' : '')}</span></li>`; }).join('')}</ul>` : `<div class="why" style="margin:0">חודש חופשי — אין קניות</div>`}</div></div>`).join('')}</div>`;
+    <div class="tl">${plan.map(m => `<div class="month"><div class="card"><header><h3>${MONTHS_HE[m.m]} ${m.y}</h3><b class="num">${nis(m.sum)}</b></header>${m.items.length ? `<ul>${m.items.map(({name, it, ls: ls_, nb, moved}) => { return `<li class="${ls_.length?'':'open'}"><span><span class="n">${esc(name)}</span><small>${ls_.length ? ls_.map(l => { const g = giftLabel(l); return esc(l.name) + (g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''); }).join(' + ') : 'עוד לא נבחר מוצר'}${nb ? ` · מומלץ כ-${nb} חודשים לפני` : ' · סמוך ללידה'}${moved ? ` · הוקדם ב-${moved} ${moved === 1 ? 'חודש' : 'חודשים'} לאיזון ההוצאה` : ''}</small></span><span class="num" style="font-weight:700">${ls_.length ? nis(totalBuy(ls_)) : (it ? '<button type="button" class="btn small soft" data-pick="' + it.id + '">לבחור</button>' : '')}</span></li>`; }).join('')}</ul>` : `<div class="why" style="margin:0">חודש חופשי — אין קניות</div>`}</div></div>`).join('')}</div>`;
   $('#editDue').onclick = editProfile;
   $$('#view-months [data-pick]').forEach(b => b.onclick = () => { const id = +b.dataset.pick, ms = modelsByItem[id] || []; if (!ms.length) return openManual(id); ms.length === 1 ? openModel(ms[0].id) : openModels(id); });
 }
@@ -1534,12 +1585,28 @@ async function refreshGiftClaims(){
     return changed;
   } catch(e) { return false; }
 }
-// תג "מכוסה" / "X מתוך Y נתפסו" — משמש גם את הרשימה הרגילה (הכרעת דניאל #3) וגם את לשונית המתנות
+// מי תפס את המתנה — השם מגיע מהתפיסה עצמה (הנותן/ת רשמו אותו; זה לא שדה חובה)
+function giverNames(c){
+  return [...new Set(((c && c.entries) || []).map(e => String(e.giverName || '').trim()).filter(Boolean))];
+}
+// תג הסטטוס — משמש את הרשימה הרגילה (הכרעת דניאל #3) וגם את לשונית המתנות
 function giftBadge(key, qty, asRow){
   const c = GIFT_CLAIMS_CACHE[key]; if (!c || !c.claimed) return '';
-  const covered = c.claimed >= qty;
-  const tag = `<span class="tag ${covered ? 'best' : 'gift'}">${covered ? 'מכוסה — מישהו כבר מביא את זה' : `${c.claimed} מתוך ${qty} נתפסו במתנה`}</span>`;
+  const covered = c.claimed >= qty, who = giverNames(c);
+  const txt = covered
+    ? (who.length ? `נתפס על ידי ${esc(who.join(', '))}` : 'נתפס — מישהו כבר מביא את זה')
+    : `${c.claimed} מתוך ${qty} נתפסו${who.length ? ` · ${esc(who.join(', '))}` : ' במתנה'}`;
+  const tag = `<span class="tag ${covered ? 'best' : 'gift'}">${txt}</span>`;
   return asRow ? `<div class="row">${tag}</div>` : ' ' + tag;
+}
+// תווית הסטטוס בסיכום ובחודשים: מה מבוקש כמתנה, ומה כבר מגיע במתנה (ולכן עלותו אפס)
+function giftLabel(l){
+  if (l.who === 'given') return { t: 'מתקבל במתנה', cls: 'best' };
+  if (l.who !== 'gift') return null;
+  const q = l.qty || 1, c = Math.min(q, claimedOf(l.key));
+  if (c >= q) return { t: 'מתקבל במתנה', cls: 'best' };
+  if (c > 0)  return { t: `מבוקש כמתנה · ${c} מתוך ${q} נתפסו`, cls: 'gift' };
+  return { t: 'מבוקש כמתנה', cls: 'gift' };
 }
 function renderGifts(){
   const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift'), given = ls_.filter(l => l.who === 'given');
@@ -1638,22 +1705,23 @@ function renderGiftScreen(list, claims, token){
     // השוואת מחירים: כל החנויות שמוכרות את הדגם, מהזולה ליקרה (הבחירה של האמא מודגשת)
     const offers = g.model ? g.model.offers.filter(o => STORES[o.sid] && !STORES[o.sid].hidden).slice().sort((a, b) => a.p - b.p) : [];
     GUEST_ROWS[g.key] = g;
-    const cmp = offers.length
-      ? `<span class="where"><button type="button" class="btn soft small" data-stores="${esc(g.key)}">לקניה בחנות${offers.length > 1 ? ` · ${offers.length} חנויות` : ''}</button></span>`
-      : (g.url ? `<span class="where"><a class="btn soft small" href="${esc(g.url)}" target="_blank" rel="noopener">לקניה בחנות</a></span>` : '');
+    const buyBtn = offers.length
+      ? `<button type="button" class="btn soft small" data-stores="${esc(g.key)}">לרכישה בחנות${offers.length > 1 ? ` · ${offers.length} חנויות` : ''}</button>`
+      : (g.url ? `<a class="btn soft small" href="${esc(g.url)}" target="_blank" rel="noopener">לרכישה בחנות</a>` : '');
     const action = already
       ? `<button type="button" class="btn small ghost" data-unclaim="${esc(g.key)}">ביטול — בסוף לא אקנה</button>`
       : remaining > 0
-        ? `<button type="button" class="btn small primary" data-claim="${esc(g.key)}" data-remaining="${remaining}">אני לוקח/ת את זה</button>`
+        ? `<button type="button" class="btn small primary" data-claim="${esc(g.key)}" data-remaining="${remaining}" data-asked="${g.qty || 1}" data-name="${esc(g.name)}">אני לוקח/ת את זה</button>`
         : `<span class="tag best">נתפס במלואו</span>`;
-    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="p num">${g.price ? nis(g.price) : ''}</span><span class="m">${esc(g.store)}${g.item ? ` · ${esc(g.item.n)}` : ''}${g.qty > 1 ? ` · נדרשות ${g.qty}${c.claimed ? `, ${c.claimed} כבר נתפסו` : ''}` : ''}</span>${cmp}<span class="act">${action}</span></div>`;
+    // שורה אחת: התפיסה בימין, הרכישה בשמאל (מתחת למחיר)
+    return `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}</span><span class="p num">${g.price ? nis(g.price) : ''}</span><span class="m">${esc(g.store)}${g.item ? ` · ${esc(g.item.n)}` : ''}${g.qty > 1 ? ` · נדרשות ${g.qty}${c.claimed ? `, ${c.claimed} כבר נתפסו` : ''}` : ''}</span><span class="act">${action}${buyBtn}</span></div>`;
   };
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span></div><div class="step">
       <h1>רשימת המתנות</h1>
       <p class="lead">הוזמנת לרשימת מתנות. בוחרים מתנה, מסמנים כמות, רושמים שם (לא חובה) - וזהו</p>
       ${gs.length ? gs.map(row).join('') : '<p class="why">עדיין לא סומנו מתנות ברשימה הזו.</p>'}
     </div>`;
-  $$('#screen-gift [data-claim]').forEach(b => b.onclick = () => openGiftClaimModal(b.dataset.claim, +b.dataset.remaining, token));
+  $$('#screen-gift [data-claim]').forEach(b => b.onclick = () => openGiftClaimModal(b.dataset.claim, +b.dataset.remaining, token, +b.dataset.asked || 1, b.dataset.name || ''));
   $$('#screen-gift [data-unclaim]').forEach(b => b.onclick = () => giftUnclaim(b.dataset.unclaim, token));
   $$('#screen-gift [data-stores]').forEach(b => b.onclick = () => openStoresModal(GUEST_ROWS[b.dataset.stores]));
 }
@@ -1677,11 +1745,17 @@ function openStoresModal(g){
     <div style="display:flex;justify-content:flex-end"><button type="button" class="btn soft" id="gsClose">סגירה</button></div>`);
   $('#gsClose').onclick = closeModal;
 }
-function openGiftClaimModal(lineKey, remaining, token){
-  openModal(`<h2>תפיסת מתנה</h2><p>כמה יחידות תביאו? (נשארו ${remaining})</p>
-    <input type="number" id="giftQty" min="1" max="${remaining}" value="1" style="width:100%;margin-bottom:10px;padding:8px">
-    <input type="text" id="giftName" placeholder="שם (לא חובה — יעזור לאמא לדעת ממי)" style="width:100%;margin-bottom:10px;padding:8px">
-    <div style="display:flex;gap:8px"><button type="button" class="btn primary" id="giftClaimGo">מתחייבים</button><button type="button" class="btn ghost" id="giftClaimCancel">ביטול</button></div>`);
+// הכמות היא בדיוק מה שנשאר: מה שהאמא ביקשה, פחות מה שכבר נתפס.
+function openGiftClaimModal(lineKey, remaining, token, asked, name){
+  const opts = [];
+  for (let i = 1; i <= remaining; i++) opts.push(`<option value="${i}">${i}</option>`);
+  openModal(`<h2>${esc(name || 'תפיסת מתנה')}</h2>
+    <p>${asked > 1 ? `ביקשו ${asked} יחידות${remaining < asked ? ` · ${asked - remaining} כבר נתפסו` : ''}.` : ''} כמה תביאו?</p>
+    <div class="field"><label for="giftQty">כמות</label>${remaining > 1
+      ? `<select id="giftQty">${opts.join('')}</select>`
+      : `<input id="giftQty" type="text" value="1" readonly>`}</div>
+    <div class="field"><label for="giftName">שם (לא חובה — כדי שהאמא תדע ממי)</label><input type="text" id="giftName"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn ghost" id="giftClaimCancel">ביטול</button><button type="button" class="btn primary" id="giftClaimGo">אישור</button></div>`);
   $('#giftClaimCancel').onclick = closeModal;
   $('#giftClaimGo').onclick = () => giftClaim(lineKey, Math.max(1, Math.min(remaining, +$('#giftQty').value || 1)), $('#giftName').value || '', token);
 }

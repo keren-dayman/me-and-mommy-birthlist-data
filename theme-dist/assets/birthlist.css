@@ -289,8 +289,7 @@
 /* עמוד נותן המתנות — שורות מרווחות יותר: שם, פרטים, "איפה קונים" והכפתור לא נדבקים זה לזה */
 #bl #screen-gift .gift{gap:6px 12px;padding:14px 14px 16px;margin-bottom:12px}
 #bl #screen-gift .gift .m{line-height:1.6}
-#bl #screen-gift .gift .where{grid-column:1 / -1;margin-top:8px}
-#bl #screen-gift .gift .act{grid-column:1 / -1;margin-top:12px}
+#bl #screen-gift .gift .act{grid-column:1 / -1;margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 #bl #screen-gift .gift .act .tag{display:inline-block}
 #bl .gift .thumb{grid-row:span 2;width:56px;height:56px}
 #bl .gift .t{font-weight:700}
@@ -310,6 +309,10 @@
 #bl .modal h2{font-size:23px;margin-bottom:4px}
 #bl .modal p{margin:0 0 14px;color:var(--ink-2)}
 #bl .field{display:grid;gap:6px;margin-bottom:12px}
+/* טופס נקי: תווית ושורת מילוי, בלי מלבן סביב כל שדה */
+#bl .modal .field input,#bl .modal .field select,#bl .modal .field textarea{background:transparent;border:0;border-bottom:1.5px solid var(--line);border-radius:0;padding:8px 2px}
+#bl .modal .field input:focus,#bl .modal .field select:focus,#bl .modal .field textarea:focus{border-bottom-color:var(--peach-deep)}
+#bl .modal .field input[readonly]{color:var(--muted)}
 #bl .field label{font-weight:600;font-size:15px}
 #bl .field.two{grid-template-columns:1fr 1fr;gap:8px}
 #bl .field.two .field{margin:0}
