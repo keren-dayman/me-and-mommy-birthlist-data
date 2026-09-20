@@ -307,17 +307,38 @@ function setOverride(mid, patch){
   }
   if (!Object.keys(o).length) delete OVERRIDES.models[mid];
 }
-async function saveOverrides(){
-  try {
-    const r = await fetch(APP_PROXY_BASE + 'overrides', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify(OVERRIDES)});
-    const d = await r.json();
-    return !!(d && d.ok);
-  } catch(e) { return false; }
+/* השמירה נכשלה בשקט יותר מפעם אחת (דיווח של דניאל, 20.9): הודעה גנרית, בלי לדעת
+   אם זו הרשאה, רשת, או מגבלת קצב של שופיפיי. עכשיו: שלושה ניסיונות עם השהיה
+   גדלה (מגבלת קצב חולפת מעצמה), והסיבה האמיתית נכנסת להודעה ולקונסול. */
+let LAST_SAVE_ERR = '';
+const saveErrNote = () => LAST_SAVE_ERR ? ` (${LAST_SAVE_ERR})` : '';
+// שתי שמירות שרצות במקביל על אותו metafield יכולות להתנגש — לכן הן נכנסות לתור.
+let SAVE_CHAIN = Promise.resolve(true);
+function saveOverrides(){
+  const run = () => saveOverridesNow();
+  const p = SAVE_CHAIN.then(run, run);
+  SAVE_CHAIN = p.catch(() => false);
+  return p;
+}
+async function saveOverridesNow(tries = 3){
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(APP_PROXY_BASE + 'overrides', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify(OVERRIDES)});
+      let d = null; try { d = await r.json(); } catch(e) {}
+      if (d && d.ok) { LAST_SAVE_ERR = ''; return true; }
+      LAST_SAVE_ERR = 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '');
+    } catch(e) {
+      LAST_SAVE_ERR = 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : '');
+    }
+    if (i < tries - 1) await new Promise(ok => setTimeout(ok, 700 * (i + 1)));
+  }
+  console.warn('[birthlist] overrides save failed:', LAST_SAVE_ERR);
+  return false;
 }
 async function adminApply(mid, patch, msg){
   setOverride(mid, patch);
   prepareData(); renderList();
-  toast((await saveOverrides()) ? msg : 'התיקון מוצג אצלך, אבל השמירה נכשלה — לנסות שוב');
+  toast((await saveOverrides()) ? msg : 'התיקון מוצג אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
 }
 
 /* =====================================================================
@@ -327,7 +348,7 @@ async function adminApply(mid, patch, msg){
    ===================================================================== */
 const EMPTY = () => ({ profile:null, sel:{}, have:{}, custom:[], open:null, tour:0 });
 let USER = null, S = EMPTY();
-let UI = { filter:'all', q:'', view:'list' };
+let UI = { filter:'all', q:'', view:'list', bstore:null };
 let saveT;
 function save(){ if (!USER) return; clearTimeout(saveT); saveT = setTimeout(flushSave, 150); }
 function flushSave(){ clearTimeout(saveT); saveT = null; if (USER) Identity.saveList(USER.id, S); }
@@ -776,7 +797,7 @@ function pickMove(){
     ids.forEach(id => setOverride(id, { item: target === ((RAW_MODELS || []).find(x => x.id === id) || {}).i ? null : target }));
     MS.pick = null; closeModal();
     prepareData(); renderList(); refreshGallery();          // הגלריה מתעדכנת מיד — המוצרים כבר לא כאן
-    toast((await saveOverrides()) ? `${ids.length} מוצרים הועברו ל"${esc((itemById[target] || {}).n || '')}"` : 'ההעברה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+    toast((await saveOverrides()) ? `${ids.length} מוצרים הועברו ל"${esc((itemById[target] || {}).n || '')}"` : 'ההעברה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
   };
 }
 function pickMerge(){
@@ -799,7 +820,7 @@ function pickMerge(){
     (OVERRIDES.merge = OVERRIDES.merge || []).push(ids);
     MS.pick = null; closeModal();
     prepareData(); renderList(); refreshGallery();          // השורה המאוחדת מופיעה מיד בגלריה
-    toast((await saveOverrides()) ? `אוחדו ל"${esc((modelById[ids[0]] || {}).n || '')}"` : 'השמירה נכשלה — לנסות שוב');
+    toast((await saveOverrides()) ? `אוחדו ל"${esc((modelById[ids[0]] || {}).n || '')}"` : 'השמירה נכשלה — לנסות שוב' + saveErrNote());
   };
 }
 
@@ -1209,7 +1230,7 @@ let STRUCT_SCROLL = 0;
 const structKeep = () => { STRUCT_SCROLL = $('#modal')?.scrollTop || 0; };
 async function saveStructure(msg){
   prepareData(); fixCustomCats(); renderAll();
-  toast((await saveOverrides()) ? msg : 'השינוי מוצג אצלך, אבל השמירה נכשלה — לנסות שוב');
+  toast((await saveOverrides()) ? msg : 'השינוי מוצג אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
   adminStructure();
 }
 function adminStructure(){
@@ -1377,7 +1398,7 @@ function adminCompare(m){
       (OVERRIDES.merge = OVERRIDES.merge || []).push([m.id, hit.m.id]);
       closeModal();
       prepareData(); renderList(); openModel(m.id);        // רואים את השורה המאוחדת מיד
-      toast((await saveOverrides()) ? 'אוחדו — החנות נוספה להשוואה' : 'השמירה נכשלה — לנסות שוב');
+      toast((await saveOverrides()) ? 'אוחדו — החנות נוספה להשוואה' : 'השמירה נכשלה — לנסות שוב' + saveErrNote());
     };
   };
 }
@@ -1404,7 +1425,7 @@ function adminCompareNew(m, url){
     (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
     closeModal();
     prepareData(); renderList(); openModel(m.id);          // ההצעה החדשה כבר בכרטיס
-    toast((await saveOverrides()) ? `${STORES[sid].n} נוספה להשוואה` : 'השמירה נכשלה — לנסות שוב');
+    toast((await saveOverrides()) ? `${STORES[sid].n} נוספה להשוואה` : 'השמירה נכשלה — לנסות שוב' + saveErrNote());
   };
 }
 
@@ -1498,7 +1519,7 @@ function adminManualProducts(){
     const note = $('#amNote').value.trim(); if (note) e.note = note;
     (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
     closeModal();
-    toast((await saveOverrides()) ? 'נשמר — ייכנס לכולן בעדכון הלילי ✓' : 'השמירה נכשלה — לנסות שוב');
+    toast((await saveOverrides()) ? 'נשמר — ייכנס לכולן בעדכון הלילי ✓' : 'השמירה נכשלה — לנסות שוב' + saveErrNote());
     adminManualProducts();
   };
   $$('[data-mdel]', $('#modal')).forEach(b => b.onclick = async () => {
@@ -1572,6 +1593,8 @@ function renderBudget(){
   const byStore = {}; buy.forEach(l => byStore[l.store] = (byStore[l.store]||0) + l.price*buyQty(l));
   const saved = buy.reduce((a, l) => a + (l.model && l.model.nStores > 1 ? (l.model.maxP - l.price) * buyQty(l) : 0), 0);
   const open = ITEMS.filter(i => !handled(i)), openMust = open.filter(i => i.t === 'חובה');
+  const shown = UI.bstore ? ls_.filter(l => l.store === UI.bstore) : ls_;
+  if (UI.bstore && !byStore[UI.bstore] && !shown.length) UI.bstore = null;   // החנות כבר לא ברשימה
   const off = [];
   if (given.length) off.push(`${given.length} שמגיעים במתנה`);
   if (claimedUnits) off.push(`${claimedUnits} ${claimedUnits === 1 ? 'יחידה שכבר נתפסה' : 'יחידות שכבר נתפסו'} במתנה (${nis(claimedSum)})`);
@@ -1581,9 +1604,15 @@ function renderBudget(){
       ${off.length ? `<div class="why" style="margin-top:6px">לא נספרים כאן: ${off.join(' · ')}</div>` : ''}
       <p class="why">${open.length ? `עוד ${open.length} פריטים לא טופלו${openMust.length ? ` (${openMust.length} מהם חובה)` : ''} — הסכום יגדל.` : 'כל הפריטים טופלו'} מחירים לפי הבדיקה האחרונה; המחיר הסופי הוא באתר החנות.</p></div>
     <div class="card"><h3>לפי קטגוריה</h3><div class="kv">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c, v]) => `<span>${CAT_EMOJI[catKey(c)]||''} ${esc(c)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">עדיין לא נבחרו מוצרים</span>'}</div></div>
-    <div class="card"><h3>לפי חנות</h3><div class="kv">${Object.entries(byStore).sort((a,b)=>b[1]-a[1]).map(([s, v]) => `<span>${esc(s)}</span><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
-    <div class="card"><h3>הרשימה המלאה</h3><div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${ls_.map(l => { const g = giftLabel(l), q = buyQty(l) || (l.qty || 1);
-      return `<tr><td>${esc(l.name)}${g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}<br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}${g && g.note ? ' · ' + g.note : ''}</small></td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">הרשימה ריקה עדיין</td></tr>'}</tbody></table></div></div>`;
+    <div class="card"><h3>לפי חנות</h3><p class="why" style="margin:0 0 8px">לחיצה על חנות מסננת את הרשימה המלאה למטה.</p><div class="kv kv-click">${Object.entries(byStore).sort((a,b)=>b[1]-a[1]).map(([s, v]) => `<button type="button" data-bstore="${esc(s)}" class="${UI.bstore === s ? 'on' : ''}">${esc(s)}</button><span class="num" style="font-weight:700">${nis(v)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
+    <div class="card"><h3>הרשימה המלאה${UI.bstore ? ` — ${esc(UI.bstore)}` : ''}</h3>${UI.bstore ? `<p class="why" style="margin:0 0 8px">${shown.length} מוצרים מ${esc(UI.bstore)} · ${nis(totalBuy(shown))} <button type="button" class="linklike" id="bStoreAll" style="margin-inline-start:8px">להצגת כל החנויות</button></p>` : ''}<div class="tblwrap"><table><thead><tr><th>מוצר</th><th>חנות</th><th class="n">כמות</th><th class="n">סה״כ</th></tr></thead><tbody>${shown.map(l => { const g = giftLabel(l), q = buyQty(l) || (l.qty || 1);
+      return `<tr><td><span class="nm">${esc(l.name)}</span><br><small class="muted">${l.item ? esc(l.item.n) : esc(l.cat)}${l.brand ? ' · ' + esc(l.brand) : ''}${g && g.note ? ' · ' + g.note : ''}</small>${g ? `<br><span class="tag ${g.cls}">${g.t}</span>` : ''}</td><td>${esc(l.store)}</td><td class="n num">${q}${buyQty(l) && buyQty(l) !== (l.qty || 1) ? ` <small class="muted">מתוך ${l.qty}</small>` : ''}</td><td class="n num">${nis(l.price*buyQty(l))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">אין מוצרים להצגה</td></tr>'}</tbody></table></div></div>`;
+  bindBudget();
+}
+
+function bindBudget(){
+  $$('#view-budget [data-bstore]').forEach(b => b.onclick = () => { UI.bstore = (UI.bstore === b.dataset.bstore) ? null : b.dataset.bstore; renderBudget(); });
+  $('#bStoreAll')?.addEventListener('click', () => { UI.bstore = null; renderBudget(); });
 }
 
 /* ---------- לפי חודשים — הטבלה BUY_MONTHS_BEFORE, ואז איזון ההוצאה ----------
