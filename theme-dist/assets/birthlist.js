@@ -422,10 +422,10 @@ function renderOnboard(){
     <div class="day-row"><label for="obDay" style="font-weight:600">יום</label><select id="obDay">${Array.from({length:31},(_, i) => `<option value="${i+1}" ${OB.due && +OB.due.slice(8)===i+1?'selected':''}>${i+1}</option>`).join('')}</select><span class="muted" style="font-size:14px">לא בטוח/ה? אפשר בערך</span></div>
     <div class="toggle"><span>תאומים או יותר?</span><button type="button" class="switch" id="obTwins" role="switch" aria-checked="${OB.twins}" aria-label="תאומים"></button></div>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext" ${OB.due?'':'disabled'}>המשך</button></div>`;
-  if (cur === 'wa') body = `${ART.group}<h1>${T("wa_title", "יש קבוצה שמחכה לך")}</h1>
+  if (cur === 'wa') body = `${ART.group}<h1>יש קבוצה שמחכה לך</h1>
     <p class="lead">${T("wa_lead", "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה. אני מנהל אותה וזמין שם לשאלות.").replace('{month}', esc(waMonthName(OB.due)))}</p>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><a class="btn primary big" id="obWaJoin" href="${esc(waLinkFor(OB.due))}" target="_blank" rel="noopener">${T("wa_btn", "הצטרפות לקבוצת הווצאפ של משוערות {month}").replace('{month}', esc(waMonthName(OB.due)))}</a></div>
-    <div style="text-align:center;margin-top:12px"><button type="button" class="linklike" id="obNext">${T("wa_skip", "להמשיך בלי הקבוצה")}</button></div>
+    <div style="text-align:center;margin-top:12px"><button type="button" class="linklike" id="obNext">להמשיך בלי הקבוצה</button></div>
     <p class="tiny">אפשר להצטרף גם אחר כך, מכפתור ההגדרות.</p>`;
   if (cur === 'first') body = `${ART.first}<h1>${T("ob2_title", "זו הלידה הראשונה?")}</h1><p class="lead">${T("ob2_lead", "ככה נדע כמה להסביר, ומה כנראה כבר יש בבית.")}</p>
     <div class="opts"><button type="button" class="opt" data-f="1" aria-pressed="${OB.first}"><span>כן, לידה ראשונה<small>נלווה אתכם צעד־צעד</small></span></button><button type="button" class="opt" data-f="0" aria-pressed="${!OB.first}"><span>כבר יש ילדים בבית<small>אפשר לסמן מהר "כבר יש לי"</small></span></button></div>
@@ -530,7 +530,7 @@ function toolLink(){
 function renderRefer(){
   const el = $('#refer'); if (!el) return;
   const link = toolLink();
-  el.innerHTML = `<div class="card"><h3>${T("refer_title", "להמליץ לחברה")}</h3>
+  el.innerHTML = `<div class="card"><h3>להמליץ לחברה</h3>
     <p class="why">${T("refer_lead", "מכירה מישהי בהיריון? שלחי לה את הכלי. היא תקבל רשימה מלאה עם מחירים מכל החנויות, בלי תשלום.")}</p>
     <div class="refer-acts"><a class="btn primary" id="referWa" href="https://wa.me/?text=${encodeURIComponent(REFER_WA_TEXT + '\n' + link)}" target="_blank" rel="noopener">${T("refer_btn", "שליחה לחברה בוואטסאפ")}</a><button type="button" class="btn soft" id="referCopy">העתקת הקישור</button></div></div>`;
   $('#referCopy').onclick = async () => {
