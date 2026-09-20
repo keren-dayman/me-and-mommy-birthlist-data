@@ -246,8 +246,54 @@ function prepareData(){
   // איחוד שורות: שורה שנבלעה בתוך אחרת משאירה כינוי. רשימה שנשמרה על השורה
   // הישנה חייבת עדיין למצוא את המוצר — אחרת איחוד היה מרוקן למישהי את הרשימה.
   for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (modelById[to]) modelById[from] = modelById[to];
+  applyMergesLive();      // איחודים שהמנהל עשה היום — לראות מיד, לא רק אחרי העדכון הלילי
+  applyManualLive();      // חנות שנוספה להשוואה עם מחיר ידני — אותו דבר
   for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
   for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
+}
+
+/* אותם כללים כמו apply_merges במנוע: המזהה הראשון בקבוצה שורד, הנבלעת מוסיפה לו
+   רק חנויות שעוד אין לו, וממשיכה להצביע עליו (כינוי) — כדי שרשימה שנשמרה עליה
+   לא תתרוקן. חציית פריטים נדחית, בדיוק כמו במנוע. */
+function recalcModel(m){
+  m.offers.sort((a, b) => (a.p - b.p) || (b.a - a.a));
+  m.best = m.offers[0]; m.min = m.offers[0].p;
+  m.maxP = Math.max(...m.offers.map(o => o.p)); m.nStores = m.offers.length;
+}
+function dropFromGallery(m){
+  const list = modelsByItem[m.i], k = list ? list.indexOf(m) : -1; if (k >= 0) list.splice(k, 1);
+  const j = MODELS.indexOf(m); if (j >= 0) MODELS.splice(j, 1);
+}
+function applyMergesLive(){
+  for (const g of (OVERRIDES.merge || [])) {
+    const ids = (g || []).map(String).filter(id => modelById[id]);
+    if (ids.length < 2) continue;
+    const keep = modelById[ids[0]];
+    for (const oid of ids.slice(1)) {
+      const o = modelById[oid];
+      if (!o || o === keep || o.i !== keep.i) continue;
+      const have = new Set(keep.offers.map(x => x.sid));
+      o.offers.forEach(x => { if (!have.has(x.sid)) keep.offers.push(x); });
+      if (o.cl && o.cl.length) keep.cl = [...new Set([...(keep.cl || []), ...o.cl])];
+      if (!keep.img && o.img) keep.img = o.img;
+      dropFromGallery(o);
+      modelById[oid] = keep;
+    }
+    recalcModel(keep);
+  }
+}
+// "הוספת חנות להשוואה" למוצר שעוד לא בסריקה: המחיר שהמנהל הזין מוצג מיד,
+// והעדכון הלילי מחליף אותו במחיר החי ברגע שהסריקה מוצאת את המוצר.
+function applyManualLive(){
+  for (const e of Object.values(OVERRIDES.manual || {})) {
+    if (!e || !e.attach || !(+e.price > 0)) continue;
+    const m = modelById[e.attach]; if (!m) continue;
+    const sid = manualStoreOf(e.url || '');
+    if (!sid || !STORES[sid] || STORES[sid].hidden) continue;
+    if (m.offers.some(o => o.sid === sid)) continue;      // הסריקה כבר הביאה את החנות הזו
+    m.offers.push({ sid, p: +e.price, a: true, u: e.url, byHand: true });
+    recalcModel(m);
+  }
 }
 
 /* ---------- תיקוני מנהל — רק דניאל רואה ושומר; משפיעים על כל הנשים ---------- */
@@ -728,9 +774,9 @@ function pickMove(){
   $('#admSave').onclick = async () => {
     const target = +$('#admItem').value;
     ids.forEach(id => setOverride(id, { item: target === ((RAW_MODELS || []).find(x => x.id === id) || {}).i ? null : target }));
-    MS.pick = null; closeModal(); closeSheet();
-    prepareData(); renderList();
-    toast((await saveOverrides()) ? `${ids.length} מוצרים הועברו` : 'ההעברה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
+    MS.pick = null; closeModal();
+    prepareData(); renderList(); refreshGallery();          // הגלריה מתעדכנת מיד — המוצרים כבר לא כאן
+    toast((await saveOverrides()) ? `${ids.length} מוצרים הועברו ל"${esc((itemById[target] || {}).n || '')}"` : 'ההעברה מוצגת אצלך, אבל השמירה נכשלה — לנסות שוב');
   };
 }
 function pickMerge(){
@@ -751,8 +797,9 @@ function pickMerge(){
   $('#admCancel').onclick = closeModal;
   $('#admSave').onclick = async () => {
     (OVERRIDES.merge = OVERRIDES.merge || []).push(ids);
-    MS.pick = null; closeModal(); closeSheet();
-    toast((await saveOverrides()) ? 'יתאחדו לשורה אחת בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+    MS.pick = null; closeModal();
+    prepareData(); renderList(); refreshGallery();          // השורה המאוחדת מופיעה מיד בגלריה
+    toast((await saveOverrides()) ? `אוחדו ל"${esc((modelById[ids[0]] || {}).n || '')}"` : 'השמירה נכשלה — לנסות שוב');
   };
 }
 
@@ -763,7 +810,7 @@ function openModel(mid){
   const body = m.offers.map(o => {
     const isBest = many && !allSame && o.p === m.min, diff = o.p - m.min, chosen = picks.some(p => p.m === m.id && p.s === o.sid);
     return `<div class="store ${isBest?'best':''}"><div class="l1"><span class="sc">${storeChip(o.sid)}${isBest ? '<span class="tag best">הכי זול</span>' : ''}${chosen ? '<span class="tag early">ברשימה</span>' : ''}</span><span class="p num">${priceLabel(o)}</span></div>
-      <div class="meta"><span>${fmtChecked(STORES[o.sid].d)}${STORES[o.sid].stale ? ' ⚠️' : ''}</span>${isBest && m.maxP > m.min ? `<span style="color:var(--sage);font-weight:700">חיסכון של ${nis(m.maxP - m.min)} לעומת היקרה</span>` : (diff > 0 ? `<span>+${nis(diff)} מהזול</span>` : '')}${!o.a ? `<span class="unavail">לא מסומן במלאי — לבדוק בחנות</span>` : ''}${o.px && o.px > o.p ? `<span>טווח: ${nis(o.p)}–${nis(o.px)} לפי גודל/גרסה</span>` : ''}</div>
+      <div class="meta"><span>${o.byHand ? 'מחיר שהוזן ידנית — יתעדכן כשהסריקה תמצא את המוצר' : fmtChecked(STORES[o.sid].d)}${!o.byHand && STORES[o.sid].stale ? ' ⚠️' : ''}</span>${isBest && m.maxP > m.min ? `<span style="color:var(--sage);font-weight:700">חיסכון של ${nis(m.maxP - m.min)} לעומת היקרה</span>` : (diff > 0 ? `<span>+${nis(diff)} מהזול</span>` : '')}${!o.a ? `<span class="unavail">לא מסומן במלאי — לבדוק בחנות</span>` : ''}${o.px && o.px > o.p ? `<span>טווח: ${nis(o.p)}–${nis(o.px)} לפי גודל/גרסה</span>` : ''}</div>
       <div class="acts"><button type="button" class="btn primary small" data-add="${esc(o.sid)}">${chosen ? 'להוסיף שוב' : 'הוספה לרשימה'}</button><a class="btn soft small" href="${esc(o.u)}" target="_blank" rel="noopener">לדף המוצר</a></div></div>`; }).join('');
   openSheet(`<div class="head"><div><h2 style="font-size:18px">${esc(m.n)}</h2><div class="sub">${m.brand ? esc(m.brand) + ' · ' : ''}${esc(it.n)}</div></div><button type="button" class="btn soft small" data-back>${(modelsByItem[it.id].length > 1) ? ic('i-back') + ' למוצרים' : 'סגירה'}</button></div>
     <div class="body">${thumb(m.img, 'lg', true)}${m.cl?.length ? `<div class="colors">${m.cl.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
@@ -1299,12 +1346,20 @@ function adminCompare(m){
   openModal(`<h2>הוספת חנות להשוואה</h2>
     <p style="font-size:14px">"${esc(m.n)}" מוצג כרגע ב-${m.offers.length === 1 ? 'חנות אחת' : `${m.offers.length} חנויות`}. אם אותו מוצר בדיוק נמכר בעוד אחת מהחנויות שלנו — מדביקים כאן את הקישור לדף המוצר שם, והשורות יתאחדו לשורה אחת עם השוואת מחיר.</p>
     <div class="field"><label for="admCmpUrl">קישור לדף המוצר בחנות השנייה</label><input id="admCmpUrl" type="url" dir="ltr" placeholder="https://"></div>
+    <div class="admin-hint" id="admCmpStore"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="admCancel">ביטול</button><button type="button" class="btn primary" id="admFind">חיפוש</button></div>`);
   $('#admCancel').onclick = closeModal;
+  $('#admCmpUrl').addEventListener('input', () => {
+    const sid = manualStoreOf($('#admCmpUrl').value.trim());
+    $('#admCmpStore').innerHTML = !$('#admCmpUrl').value.trim() ? ''
+      : sid ? `זוהתה חנות: <b>${esc(STORES[sid].n)}</b> · ${manualFresh(sid)}`
+            : '<span style="color:var(--rose)">הקישור אינו מאחת משש החנויות שהכלי מכיר</span>';
+  });
   $('#admFind').onclick = () => {
     const u = $('#admCmpUrl').value.trim();
     const hit = findModelByUrl(u);
-    if (!hit) return toast('לא מצאתי את הקישור הזה בסריקה — אם המוצר לא אצלנו, קודם "הוספת מוצר לכולן"');
+    // המוצר עוד לא בסריקה (או שהמנוע סינן אותו) — מזהים חנות, מבקשים מחיר, וזהו
+    if (!hit) return adminCompareNew(m, u);
     if (hit.m.id === m.id) return toast('זה כבר אותו מוצר');
     const joined = new Set((OVERRIDES.merge || []).flat());
     if (joined.has(hit.m.id) || joined.has(m.id)) return toast('אחד המוצרים כבר אוחד — אפשר לבטל את האיחוד הקודם במסך "מצב הכלי"');
@@ -1320,9 +1375,36 @@ function adminCompare(m){
     $('#admJoin').onclick = async () => {
       if (cross) setOverride(hit.m.id, { item: m.i });     // איחוד חוצה-פריטים נדחה במנוע — מיישרים קודם
       (OVERRIDES.merge = OVERRIDES.merge || []).push([m.id, hit.m.id]);
-      closeModal(); closeSheet();
-      toast((await saveOverrides()) ? 'יתאחדו לשורה אחת בעדכון הלילי' : 'השמירה נכשלה — לנסות שוב');
+      closeModal();
+      prepareData(); renderList(); openModel(m.id);        // רואים את השורה המאוחדת מיד
+      toast((await saveOverrides()) ? 'אוחדו — החנות נוספה להשוואה' : 'השמירה נכשלה — לנסות שוב');
     };
+  };
+}
+/* המוצר לא נמצא בסריקה: מזהים את החנות מהקישור, המנהל נותן מחיר ראשוני,
+   והמוצר נכנס כהצעה נוספת לאותה שורה. הרשומה נשארת ב-overrides, ולכן כל סריקה
+   לילית מנסה למצוא אותו מחדש — וברגע שתמצא, המחיר החי מחליף את מה שהוזן ביד. */
+function adminCompareNew(m, url){
+  const sid = manualStoreOf(url);
+  if (!sid) return toast('הקישור אינו מאחת משש החנויות שהכלי מכיר');
+  openModal(`<h2>הוספת ${esc(STORES[sid].n)} להשוואה</h2>
+    <p style="font-size:14px">המוצר הזה עוד לא נמצא בסריקה שלנו. אפשר להוסיף אותו עכשיו עם מחיר שתזין/י — הוא ייכנס מיד כחנות נוספת ל"${esc(m.n)}", וימשיך להיבדק בכל סריקה: ברגע שהסריקה תמצא אותו, המחיר החי יחליף את מה שהזנת.</p>
+    <div class="field"><label for="admNewPrice">המחיר בחנות (₪)</label><input id="admNewPrice" type="number" min="0" step="0.1" inputmode="decimal"></div>
+    <div class="field"><label for="admNewName">שם המוצר בחנות (לא חובה)</label><input id="admNewName" type="text" maxlength="40" placeholder="${esc(m.n)}"></div>
+    <div class="admin-hint">${esc(STORES[sid].n)} · ${manualFresh(sid)}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn soft" id="admCancel3">ביטול</button><button type="button" class="btn primary" id="admNewSave">הוספה</button></div>`);
+  $('#admCancel3').onclick = closeModal;
+  $('#admNewSave').onclick = async () => {
+    const price = parseFloat($('#admNewPrice').value);
+    if (!(price > 0)) { $('#admNewPrice').focus(); return toast('צריך מחיר'); }
+    if (m.offers.some(o => o.sid === sid)) return toast(`${STORES[sid].n} כבר מופיעה במוצר הזה`);
+    const k = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const e = { item: m.i, url, price, attach: m.id, added: new Date().toISOString().slice(0, 10) };
+    const nm = $('#admNewName').value.trim(); if (nm) e.name = nm;
+    (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
+    closeModal();
+    prepareData(); renderList(); openModel(m.id);          // ההצעה החדשה כבר בכרטיס
+    toast((await saveOverrides()) ? `${STORES[sid].n} נוספה להשוואה` : 'השמירה נכשלה — לנסות שוב');
   };
 }
 
@@ -1370,6 +1452,7 @@ function manualStoreOf(u){
 function manualFresh(sid){ return NIGHTLY_STORES[sid] ? 'המחיר יתעדכן מדי לילה' : 'המחיר יתעדכן רק בסריקה הידנית שלך (בערך פעם בשבוע)'; }
 function manualStatusLine(k){
   const st = (DATA.manual || {})[k];
+  if (st && st.s === 'ok' && st.byHand) return {t:'✓ פעיל עם המחיר שהזנת — יתעדכן כשהסריקה תמצא אותו', open: null};
   if (!st) return {t:'⏳ ממתין לעדכון הלילי — ייכנס לקובץ של כולן עד מחר בבוקר', open:null};
   if (st.s === 'ok') return {t:'✓ פעיל בקובץ לכולן', open: modelById[st.id] ? st.id : null};
   if (st.s === 'duplicate') return {t:'כבר קיים בהתאמות האוטומטיות — אין צורך בהוספה', open: modelById[st.id] ? st.id : null};
