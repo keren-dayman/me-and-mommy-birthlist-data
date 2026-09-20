@@ -126,6 +126,12 @@
     {% if section.settings.img_date != blank %}"date": {{ section.settings.img_date | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_first != blank %}"first": {{ section.settings.img_first | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_lock != blank %}"lock": {{ section.settings.img_lock | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour1 != blank %}"tour1": {{ section.settings.img_tour1 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour2 != blank %}"tour2": {{ section.settings.img_tour2 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour3 != blank %}"tour3": {{ section.settings.img_tour3 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour4 != blank %}"tour4": {{ section.settings.img_tour4 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour5 != blank %}"tour5": {{ section.settings.img_tour5 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour6 != blank %}"tour6": {{ section.settings.img_tour6 | image_url: width: 480 | json }},{% endif %}
     "_": null
   }
 }
@@ -203,7 +209,7 @@
       "type": "text",
       "id": "t_ob0_title",
       "label": "כותרת",
-      "default": "היי, ברוכים הבאים 🌸"
+      "default": "היי, ברוכים הבאים"
     },
     {
       "type": "textarea",
@@ -269,7 +275,7 @@
       "type": "text",
       "id": "t_ob2_btn",
       "label": "כפתור",
-      "default": "בונים את הרשימה ✨"
+      "default": "בונים את הרשימה"
     },
     {
       "type": "header",
@@ -285,7 +291,7 @@
       "type": "text",
       "id": "t_build_btn",
       "label": "כפתור בסיום",
-      "default": "לרשימה שלי ←"
+      "default": "לרשימה שלי"
     },
     {
       "type": "header",
@@ -297,10 +303,48 @@
       "label": "איור"
     },
     {
+      "type": "header",
+      "content": "הדרכה למשתמשת חדשה"
+    },
+    {
+      "type": "paragraph",
+      "content": "שישה מסכי הדרכה שנפתחים פעם אחת לכל משתמשת, וגם מכפתור ההגדרות. בלי תמונה מוצג איור. מומלץ צילומי מסך מהכלי, ברוחב 480 ומעלה."
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour1",
+      "label": "תמונה 1"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour2",
+      "label": "תמונה 2"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour3",
+      "label": "תמונה 3"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour4",
+      "label": "תמונה 4"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour5",
+      "label": "תמונה 5"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour6",
+      "label": "תמונה 6"
+    },
+    {
       "type": "text",
       "id": "t_signin_title",
       "label": "כותרת",
-      "default": "עוד צעד קטן 🌸"
+      "default": "עוד צעד קטן"
     },
     {
       "type": "text",

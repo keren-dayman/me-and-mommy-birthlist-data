@@ -104,6 +104,8 @@
 #bl .rq-more{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;text-decoration:underline;padding:3px 0 0}
 #bl .adm-store{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
 #bl .mcard.dim{opacity:.55}
+#bl .mcard.picked{outline:3px solid var(--peach);outline-offset:-1px}
+#bl .mcard.picked::after{content:"✓";position:absolute;top:4px;inset-inline-start:4px;width:24px;height:24px;border-radius:999px;background:var(--peach);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700}
 #bl .mcard-x{position:absolute;top:4px;inset-inline-end:4px;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--surface-2);color:var(--rose);font-size:15px;line-height:1;box-shadow:var(--shadow);cursor:pointer;z-index:1}
 #bl .mcard-x.armed{padding:0 9px;background:var(--rose);color:#fff;font-size:12px;font-weight:700}
 #bl .summary-box{background:var(--surface);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);margin-bottom:18px;display:grid;gap:4px}
@@ -225,6 +227,8 @@
 #bl .sheet .head h2{font-size:21px}
 #bl .sheet .head .sub{font-size:13.5px;color:var(--muted)}
 #bl .sheet .body{overflow:auto;padding:4px 16px 28px;overscroll-behavior:contain}
+/* גלריית המוצרים לא מתכווצת כשהחיפוש ריק — אחרת החלון "נעלם" לתחתית המסך */
+#bl #msBody{min-height:62vh;min-height:62dvh}
 #bl .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 #bl .toolbar .searchbox{flex:1 1 160px}
 #bl .toolbar select{flex:0 1 160px;border-radius:999px}
@@ -281,11 +285,22 @@
 #bl .month li.open{background:transparent;border:1.5px dashed var(--line)}
 
 /* מתנות */
-#bl .gift{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;padding:12px;background:var(--surface);border-radius:var(--r-sm);margin-bottom:8px;align-items:center;box-shadow:var(--shadow)}
+#bl .gift{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;padding:12px;background:var(--surface);border-radius:var(--r-sm);margin-bottom:8px;align-items:center;box-shadow:var(--shadow)}
+/* עמוד נותן המתנות — שורות מרווחות יותר: שם, פרטים, "איפה קונים" והכפתור לא נדבקים זה לזה */
+#bl #screen-gift .gift{gap:6px 12px;padding:14px 14px 16px;margin-bottom:12px}
+#bl #screen-gift .gift .m{line-height:1.6}
+#bl #screen-gift .gift .where{grid-column:1 / -1;margin-top:8px}
+#bl #screen-gift .gift .act{grid-column:1 / -1;margin-top:12px}
+#bl #screen-gift .gift .act .tag{display:inline-block}
 #bl .gift .thumb{grid-row:span 2;width:56px;height:56px}
 #bl .gift .t{font-weight:700}
 #bl .gift .m{font-size:13px;color:var(--muted)}
 #bl .gift .p{font-family:var(--font-head);grid-row:span 2;white-space:nowrap}
+/* הדרכה */
+#bl .tour-dots{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
+#bl .tour-dots i{width:7px;height:7px;border-radius:999px;background:var(--line)}
+#bl .tour-dots i.on{background:var(--peach);width:18px}
+#bl .tour-img{width:100%;max-width:320px;height:auto;border-radius:14px;border:1px solid var(--line)}
 #bl .linkbox{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #bl .linkbox textarea{width:100%;height:160px;font-size:13.5px;resize:vertical}
 
