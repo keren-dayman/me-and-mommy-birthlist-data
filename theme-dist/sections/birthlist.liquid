@@ -139,6 +139,7 @@
     {% if section.settings.img_tour4 != blank %}"tour4": {{ section.settings.img_tour4 | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_tour5 != blank %}"tour5": {{ section.settings.img_tour5 | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_tour6 != blank %}"tour6": {{ section.settings.img_tour6 | image_url: width: 480 | json }},{% endif %}
+    {% if section.settings.img_tour7 != blank %}"tour7": {{ section.settings.img_tour7 | image_url: width: 480 | json }},{% endif %}
     "_": null
   }
 }
@@ -340,7 +341,7 @@
     },
     {
       "type": "paragraph",
-      "content": "שישה מסכי הדרכה שנפתחים פעם אחת לכל משתמשת, וגם מכפתור ההגדרות. בלי תמונה מוצג איור. מומלץ צילומי מסך מהכלי, ברוחב 480 ומעלה."
+      "content": "שבעה מסכי הדרכה שנפתחים פעם אחת לכל משתמשת, וגם מכפתור ההגדרות. בלי תמונה מוצג איור. מומלץ צילומי מסך מהכלי ביחס 4:3, ברוחב 480 ומעלה."
     },
     {
       "type": "image_picker",
@@ -371,6 +372,11 @@
       "type": "image_picker",
       "id": "img_tour6",
       "label": "תמונה 6"
+    },
+    {
+      "type": "image_picker",
+      "id": "img_tour7",
+      "label": "תמונה 7"
     },
     {
       "type": "text",

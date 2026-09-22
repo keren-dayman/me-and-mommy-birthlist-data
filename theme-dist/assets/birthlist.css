@@ -64,6 +64,14 @@
 #bl .switch[aria-checked="true"]::after{transform:translateX(-20px)}
 #bl .nav{display:flex;gap:10px;align-items:center}
 #bl .nav .btn.ghost{padding-inline:10px;flex:0 0 auto}
+/* כפתור ההצטרפות לקבוצה נושא בתוכו חודש ושנה, ולכן הוא ארוך במיוחד. לכפתורים
+   בכלי יש white-space:nowrap — כאן זה גרם לטקסט לחרוג מהמסך ולהיחתך בטלפון.
+   לכן הוא יושב בשורה משלו, על כל הרוחב, ורשאי לרדת לשורה שנייה. */
+#bl #obWaJoin{white-space:normal;line-height:1.35;padding-block:13px;text-align:center}
+/* שורת החזרה והדילוג: "להמשיך בלי הקבוצה" ממורכז ביחס לכפתור שמעליו, ולכן חץ
+   החזרה יוצא מזרימת השורה — אחרת הוא היה דוחף את הקישור מהמרכז. */
+#bl .wa-nav{position:relative;justify-content:center;min-height:40px}
+#bl .wa-nav .btn.ghost{position:absolute;inset-inline-start:0;inset-block:0}
 #bl .tiny{font-size:13px;color:var(--muted);text-align:center;margin-top:14px}
 
 /* מסך "הרשימה נבנית" */
@@ -342,7 +350,18 @@
 #bl .tour-dots{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
 #bl .tour-dots i{width:7px;height:7px;border-radius:999px;background:var(--line)}
 #bl .tour-dots i.on{background:var(--peach);width:18px}
-#bl .tour-img{width:100%;max-width:320px;height:auto;border-radius:14px;border:1px solid var(--line)}
+/* תקרת גובה: צילום מסך של טלפון ארוך מאוד ביחס לרוחבו, ובלי התקרה הזו הוא היה
+   דוחף את כפתורי ההדרכה מתחת לקצה החלון. contain שומר על הפרופורציה.
+   המסגרת יושבת על העוטף ולא על התמונה, כדי שהזום ייחתך בתוך הפינות המעוגלות. */
+#bl .tour-shot{display:block;max-width:320px;margin-inline:auto;overflow:hidden;border-radius:14px;border:1px solid var(--line);line-height:0}
+#bl .tour-img{width:100%;height:auto;max-height:44vh;object-fit:contain;display:block;animation:tourZoom 14s ease-out both}
+/* תנועה: כל שלב נכנס בהחלקה קצרה לכיוון שבו התקדמת, והתמונה נושמת זום עדין.
+   מי שביקשה במכשיר שלה להפחית תנועה לא תקבל כלום מזה — הכלל בסוף הקובץ מכבה הכול. */
+#bl .tour-step{animation:tourIn .3s cubic-bezier(.22,.61,.36,1) both}
+#bl .tour-step.back{animation-name:tourInBack}
+@keyframes tourIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+@keyframes tourInBack{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes tourZoom{from{transform:scale(1)}to{transform:scale(1.07)}}
 /* כפתור שהוא טקסט בלבד */
 #bl .linklike{color:var(--peach-ink);font-weight:700;font-size:14.5px;text-decoration:underline;text-underline-offset:3px;padding:4px 8px}
 #bl .linklike[disabled]{color:var(--muted);text-decoration:none}

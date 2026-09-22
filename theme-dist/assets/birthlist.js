@@ -424,8 +424,8 @@ function renderOnboard(){
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext" ${OB.due?'':'disabled'}>המשך</button></div>`;
   if (cur === 'wa') body = `${ART.group}<h1>יש קבוצה שמחכה לך</h1>
     <p class="lead">${T("wa_lead", "קבוצת וואטסאפ של נשים עם תאריך משוער ב{month} — מתייעצות, ממליצות ומלוות אחת את השנייה.").replace('{month}', esc(waMonthName(OB.due)))}</p>
-    <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><a class="btn primary big" id="obWaJoin" href="${esc(waLinkFor(OB.due))}" target="_blank" rel="noopener">${T("wa_btn", "הצטרפות לקבוצת הווצאפ של משוערות {month}").replace('{month}', esc(waMonthName(OB.due)))}</a></div>
-    <div style="text-align:center;margin-top:12px"><button type="button" class="linklike" id="obNext">להמשיך בלי הקבוצה</button></div>
+    <a class="btn primary big" id="obWaJoin" href="${esc(waLinkFor(OB.due))}" target="_blank" rel="noopener">${T("wa_btn", "הצטרפות לקבוצת הווצאפ של משוערות {month}").replace('{month}', esc(waMonthName(OB.due)))}</a>
+    <div class="nav wa-nav" style="margin-top:12px"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button type="button" class="linklike" id="obNext">להמשיך בלי הקבוצה</button></div>
     <p class="tiny">אפשר להצטרף גם אחר כך, מכפתור ההגדרות.</p>`;
   if (cur === 'first') body = `${ART.first}<h1>${T("ob2_title", "זו הלידה הראשונה?")}</h1><p class="lead">${T("ob2_lead", "ככה נדע כמה להסביר, ומה כנראה כבר יש בבית.")}</p>
     <div class="opts"><button type="button" class="opt" data-f="1" aria-pressed="${OB.first}"><span>כן, לידה ראשונה<small>נלווה אתכם צעד־צעד</small></span></button><button type="button" class="opt" data-f="0" aria-pressed="${!OB.first}"><span>כבר יש ילדים בבית<small>אפשר לסמן מהר "כבר יש לי"</small></span></button></div>
@@ -552,12 +552,15 @@ const TOUR = [
   { t: 'כמות, מחיר משלכם, ומה שכבר יש',
     d: 'לכל מוצר שנבחר אפשר לקבוע כמות, לעדכן מחיר אם קיבלתם הנחה, לסמן "כבר יש לי", או להסיר.',
     img: 'tour4' },
+  { t: 'להוסיף מוצר משלכם',
+    d: 'לא כל מוצר נמצא בחנויות שאנחנו סורקים. בכפתור "מוצר משלי" אפשר להוסיף כל מוצר, מכל חנות או אתר — עם שם, מחיר וקישור. הוא נכנס לרשימה, לתקציב ולפריסה החודשית בדיוק כמו כל מוצר אחר.',
+    img: 'tour5' },
   { t: 'מה לבקש במתנה',
     d: 'מסמנים מוצר כ"לבקש במתנה", ובלשונית מתנות שולחים קישור בוואטסאפ. מי שמקבל אותו בוחר מה הוא מביא — בלי חשבון — וזה מסומן לכם ברשימה ויורד מהתקציב.',
-    img: 'tour5' },
+    img: 'tour6' },
   { t: 'תקציב ופריסה לחודשים',
     d: 'בלשונית תקציב רואים כמה הכל יוצא, לפי קטגוריה ולפי חנות. בלשונית חודשים הקניות מתחלקות על החודשים שנשארו, כך שלא ייצא חודש אחד יקר במיוחד.',
-    img: 'tour6' },
+    img: 'tour7' },
 ];
 const TOUR_ART = `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><rect x="24" y="22" width="112" height="116" rx="14" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/><rect x="38" y="40" width="60" height="10" rx="5" fill="var(--peach-soft)"/><rect x="38" y="60" width="84" height="8" rx="4" fill="var(--surface-2)"/><rect x="38" y="76" width="70" height="8" rx="4" fill="var(--surface-2)"/><rect x="38" y="98" width="84" height="26" rx="10" fill="var(--peach-soft)"/></svg>`;
 let TOUR_STEP = 0;
@@ -565,12 +568,13 @@ let TOUR_STEP = 0;
 // ולא כאן, כי יש שלוש דרכים לצאת: הכפתורים, לחיצה מחוץ לחלון, ומקש Escape —
 // ורק הראשונה עוברת דרך closeTour. בלי זה ההדרכה הייתה קופצת שוב בכניסה הבאה.
 let TOUR_OPEN = false;
-function openTour(){ TOUR_STEP = 0; renderTour(); }
+function openTour(){ TOUR_STEP = 0; TOUR_DIR = 1; renderTour(); }
+let TOUR_DIR = 1;                                  // 1 = קדימה, -1 = חזרה. קובע את כיוון ההחלקה.
 function renderTour(){
   const st = TOUR[TOUR_STEP], last = TOUR_STEP === TOUR.length - 1;
-  const pic = (BL_SETTINGS.img && BL_SETTINGS.img[st.img]) ? `<img class="art tour-img" src="${esc(BL_SETTINGS.img[st.img])}" alt="" loading="lazy">` : TOUR_ART;
+  const pic = (BL_SETTINGS.img && BL_SETTINGS.img[st.img]) ? `<span class="tour-shot"><img class="tour-img" src="${esc(BL_SETTINGS.img[st.img])}" alt="" loading="lazy"></span>` : TOUR_ART;
   openModal(`<div class="tour-dots" aria-hidden="true">${TOUR.map((_, i) => `<i class="${i === TOUR_STEP ? 'on' : ''}"></i>`).join('')}</div>
-    ${pic}
+    <div class="tour-step${TOUR_DIR < 0 ? ' back' : ''}">${pic}
     <h2 style="font-size:21px">${esc(st.t)}</h2>
     <p>${esc(st.d)}</p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -578,9 +582,9 @@ function renderTour(){
       ${TOUR_STEP ? '<button type="button" class="btn soft" id="tourPrev">הקודם</button>' : ''}
       <button type="button" class="btn ghost" id="tourSkip" style="margin-inline-start:auto">${last ? 'סגירה' : 'דילוג'}</button>
     </div>
-    <p class="why" style="text-align:center;margin:12px 0 0">אפשר לפתוח את ההדרכה שוב בכל שלב, מכפתור ההגדרות למעלה.</p>`);
-  $('#tourNext').onclick = () => { if (last) return closeTour(); TOUR_STEP++; renderTour(); };
-  $('#tourPrev')?.addEventListener('click', () => { TOUR_STEP--; renderTour(); });
+    <p class="why" style="text-align:center;margin:12px 0 0">אפשר לפתוח את ההדרכה שוב בכל שלב, מכפתור ההגדרות למעלה.</p></div>`);
+  $('#tourNext').onclick = () => { if (last) return closeTour(); TOUR_DIR = 1; TOUR_STEP++; renderTour(); };
+  $('#tourPrev')?.addEventListener('click', () => { TOUR_DIR = -1; TOUR_STEP--; renderTour(); });
   $('#tourSkip').onclick = closeTour;
   TOUR_OPEN = true;
 }
