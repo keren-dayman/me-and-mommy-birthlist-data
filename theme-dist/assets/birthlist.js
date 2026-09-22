@@ -561,6 +561,10 @@ const TOUR = [
 ];
 const TOUR_ART = `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><rect x="24" y="22" width="112" height="116" rx="14" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/><rect x="38" y="40" width="60" height="10" rx="5" fill="var(--peach-soft)"/><rect x="38" y="60" width="84" height="8" rx="4" fill="var(--surface-2)"/><rect x="38" y="76" width="70" height="8" rx="4" fill="var(--surface-2)"/><rect x="38" y="98" width="84" height="26" rx="10" fill="var(--peach-soft)"/></svg>`;
 let TOUR_STEP = 0;
+// TOUR_OPEN מסמן שההדרכה היא מה שפתוח בחלון. הסימון "כבר ראיתי" נעשה ב-closeModal
+// ולא כאן, כי יש שלוש דרכים לצאת: הכפתורים, לחיצה מחוץ לחלון, ומקש Escape —
+// ורק הראשונה עוברת דרך closeTour. בלי זה ההדרכה הייתה קופצת שוב בכניסה הבאה.
+let TOUR_OPEN = false;
 function openTour(){ TOUR_STEP = 0; renderTour(); }
 function renderTour(){
   const st = TOUR[TOUR_STEP], last = TOUR_STEP === TOUR.length - 1;
@@ -578,11 +582,9 @@ function renderTour(){
   $('#tourNext').onclick = () => { if (last) return closeTour(); TOUR_STEP++; renderTour(); };
   $('#tourPrev')?.addEventListener('click', () => { TOUR_STEP--; renderTour(); });
   $('#tourSkip').onclick = closeTour;
+  TOUR_OPEN = true;
 }
-function closeTour(){
-  closeModal();
-  if (!S.tour) { S.tour = 1; save(); }              // נשמר בחשבון — לא יקפוץ שוב בשום מכשיר
-}
+function closeTour(){ closeModal(); }
 function renderAll(){ renderList(); showView(UI.view); }
 function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') { renderBudget(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'budget') renderBudget(); }); } if (v === 'months') { renderMonths(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'months') renderMonths(); }); } if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(changed => { if (changed) renderGifts(); }); } if (v === 'list') refreshGiftClaims().then(changed => { if (changed) renderList(); }); window.scrollTo({top:0}); }
 $$('#tabs [role=tab]').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -745,8 +747,11 @@ $('#search').oninput = e => { UI.q = e.target.value.trim(); renderList(); };
 /* ---------- חלון / גיליון ---------- */
 let lastFocus = null;
 function trap(c){ c.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); c.id === 'modal' ? closeModal() : closeSheet(); } if (e.key !== 'Tab') return; const f = $$('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])', c).filter(x => !x.disabled && x.offsetParent !== null); if (!f.length) return; const a = f[0], z = f[f.length-1]; if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); } }); }
-function openModal(html){ lastFocus = document.activeElement; $('#modal').innerHTML = html; $('#modalBg').hidden = false; document.body.style.overflow='hidden'; setTimeout(() => $$('button,input,select', $('#modal'))[0]?.focus(), 0); }
-function closeModal(){ $('#modalBg').hidden = true; document.body.style.overflow=''; lastFocus?.focus?.(); }
+function openModal(html){ TOUR_OPEN = false; lastFocus = document.activeElement; $('#modal').innerHTML = html; $('#modalBg').hidden = false; document.body.style.overflow='hidden'; setTimeout(() => $$('button,input,select', $('#modal'))[0]?.focus(), 0); }
+function closeModal(){
+  // ההדרכה נחשבת "הוצגה" בכל דרך שבה סגרו אותה — נשמר בחשבון, ולכן בכל מכשיר
+  if (TOUR_OPEN) { TOUR_OPEN = false; if (!S.tour) { S.tour = 1; save(); } }
+  $('#modalBg').hidden = true; document.body.style.overflow=''; lastFocus?.focus?.(); }
 function openSheet(html){ lastFocus = document.activeElement; $('#sheet').innerHTML = `<div class="grab"></div>` + html; $('#sheetBg').hidden = false; document.body.style.overflow='hidden'; $('#sheet .body').scrollTop = 0; setTimeout(() => $('#sheet .head button')?.focus(), 0); }
 function closeSheet(){ $('#sheetBg').hidden = true; document.body.style.overflow=''; lastFocus?.focus?.(); }
 trap($('#modal')); trap($('#sheet'));
