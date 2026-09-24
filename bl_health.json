@@ -2,6 +2,29 @@
  "schema": 1,
  "runs": [
   {
+   "at": "2026-09-24T08:28:02Z",
+   "ok": true,
+   "run": "35975116891",
+   "url": "https://github.com/keren-dayman/me-and-mommy-birthlist/actions/runs/35975116891",
+   "trigger": "schedule",
+   "counts": {
+    "models": 3226,
+    "offers": 3703,
+    "multiStore": 339,
+    "review": 1,
+    "manual": 0
+   },
+   "stores": {
+    "shilav": 6736,
+    "babystar": 3027,
+    "motsesim": 3737,
+    "agalease": 4505,
+    "minene": 5019,
+    "superpharm": 1354
+   },
+   "built": "2026-09-24T08:27:56Z"
+  },
+  {
    "at": "2026-09-23T03:28:21Z",
    "ok": true,
    "run": "35814270531",
@@ -287,5 +310,5 @@
    "built": "2026-09-18T14:19:23Z"
   }
  ],
- "updated": "2026-09-23T03:28:21Z"
+ "updated": "2026-09-24T08:28:02Z"
 }
