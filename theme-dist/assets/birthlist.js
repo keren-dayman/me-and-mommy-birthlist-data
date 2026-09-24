@@ -134,19 +134,36 @@ const Identity = (() => {
       logout.searchParams.set('return_url', back.pathname);
       location.href = logout.toString();
     },
-    async loadList(){
-      const r = await fetch(APP_PROXY_BASE + 'list', {credentials:'same-origin'});
-      const d = await r.json();
-      return (d && d.ok) ? d.list : null;
+    // הרשימה השמורה של החשבון, או null כשאין עדיין רשימה (חשבון חדש).
+    // כל דבר אחר — שגיאת שרת, תשובה שאינה JSON, אין רשת — הוא חריגה, ולא "אין רשימה":
+    // "אין רשימה" מובילה להרשמה, וההרשמה שומרת רשימה חדשה שדורסת את הרשימה האמיתית
+    // (ביקורת 24.9, 3.1א). כישלון חולף מקבל שלושה ניסיונות לפני שמתייאשים.
+    async loadList(tries = 3){
+      let err = '';
+      for (let i = 0; i < tries; i++) {
+        try {
+          const r = await fetch(APP_PROXY_BASE + 'list', {credentials:'same-origin', cache:'no-store'});
+          let d = null; try { d = await r.json(); } catch(e) {}
+          if (d && d.ok) return (d.list && typeof d.list === 'object') ? d.list : null;
+          err = 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '');
+        } catch(e) { err = 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : ''); }
+        if (i < tries - 1) await new Promise(ok => setTimeout(ok, 600 * (i + 1)));
+      }
+      throw new Error(err || 'list');
     },
-    async saveList(_uid, list){
+    // שמירה: מחזירה {ok, err} במקום לבלוע כישלון בשקט (ביקורת 24.9, H2).
+    // keepalive — לשמירה האחרונה כשהעמוד נסגר: הדפדפן מסיים אותה גם אחרי היציאה.
+    async saveList(_uid, list, opts = {}){
+      const init = {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify(list)};
+      if (opts.keepalive) init.keepalive = true;
       try {
-        await fetch(APP_PROXY_BASE + 'list', {
-          method:'POST', credentials:'same-origin',
-          headers:{'content-type':'application/json'},
-          body: JSON.stringify(list),
-        });
-      } catch(e) {}
+        let r;
+        try { r = await fetch(APP_PROXY_BASE + 'list', init); }
+        catch(e) { if (!init.keepalive) throw e; delete init.keepalive; r = await fetch(APP_PROXY_BASE + 'list', init); } // keepalive מוגבל ל-64KB — נופלים חזרה לשמירה רגילה
+        let d = null; try { d = await r.json(); } catch(e) {}
+        if (d && d.ok) return {ok:true};
+        return {ok:false, err: 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '')};
+      } catch(e) { return {ok:false, err: 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : '')}; }
     },
   };
 })();
@@ -356,9 +373,40 @@ const EMPTY = () => ({ profile:null, sel:{}, have:{}, custom:[], open:null, tour
 let USER = null, S = EMPTY();
 let UI = { filter:'all', q:'', view:'list', bstore:null };
 let saveT;
-function save(){ if (!USER) return; clearTimeout(saveT); saveT = setTimeout(flushSave, 150); }
-function flushSave(){ clearTimeout(saveT); saveT = null; if (USER) Identity.saveList(USER.id, S); }
-window.addEventListener('pagehide', () => { if (saveT) flushSave(); });
+/* שמירת הרשימה של האמא — הכללים (ביקורת 24.9, 3.1א/ב + H2):
+   1. שומרים רק אחרי שטעינה אחת של הרשימה מהשרת הצליחה בטעינה הזו (LIST_LOADED).
+      בלי זה, כישלון חולף בטעינה היה נראה כמו "משתמשת חדשה", והשמירה הבאה הייתה
+      דורסת את הרשימה השמורה ברשימה ריקה.
+   2. שמירה אחת בכל רגע, והבאה מחכה לה — כדי שגוף ישן לא יגיע לשרת אחרי חדש.
+   3. כישלון לא נבלע: פס "לא נשמר" עם "לנסות שוב" נשאר עד שהשמירה הבאה מצליחה.
+   4. בסגירת העמוד — שמירה עם keepalive, שהדפדפן מסיים גם אחרי היציאה.                */
+let LIST_LOADED = false, LIST_DIRTY = false, LIST_SAVING = false, LAST_LIST_ERR = '';
+const canSave = () => !!USER && LIST_LOADED;
+function save(){ if (!canSave()) return; LIST_DIRTY = true; clearTimeout(saveT); saveT = setTimeout(flushSave, 150); }
+function flushSave(){
+  clearTimeout(saveT); saveT = null;
+  if (!canSave() || !LIST_DIRTY || LIST_SAVING) return;
+  LIST_SAVING = true; LIST_DIRTY = false;
+  Identity.saveList(USER.id, S).then(res => {
+    LIST_SAVING = false;
+    if (res && res.ok) { LAST_LIST_ERR = ''; showSaveBar(false); if (LIST_DIRTY) flushSave(); return; }
+    LIST_DIRTY = true; LAST_LIST_ERR = (res && res.err) || '';
+    console.warn('[birthlist] list save failed:', LAST_LIST_ERR);
+    if ($('#saveBar').hidden) toast('השמירה נכשלה — השינויים האחרונים לא נשמרו');
+    showSaveBar(true);
+  });
+}
+function showSaveBar(on){ const b = $('#saveBar'); b.hidden = !on; if (on) $('#saveBarMsg').textContent = 'השינויים האחרונים לא נשמרו' + (LAST_LIST_ERR ? ' (' + LAST_LIST_ERR + ')' : ''); }
+$('#saveBarRetry').onclick = () => { if (!canSave()) return; LIST_DIRTY = true; flushSave(); };
+// יציאה מהעמוד (או מעבר לאפליקציה אחרת בטלפון): מה שעדיין לא נשמר יוצא מיד, בלי לחכות לתור, ועם keepalive.
+function saveOnLeave(){
+  if (!canSave() || !(LIST_DIRTY || saveT)) return;
+  clearTimeout(saveT); saveT = null; LIST_DIRTY = false;
+  // אם בכל זאת נכשל (והעמוד עדיין חי, למשל חזרה מאפליקציה אחרת) — הפס יופיע והשינוי יישמר בניסיון הבא
+  Identity.saveList(USER.id, S, {keepalive:true}).then(res => { if (!(res && res.ok)) { LIST_DIRTY = true; LAST_LIST_ERR = (res && res.err) || ''; showSaveBar(true); } });
+}
+window.addEventListener('pagehide', saveOnLeave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveOnLeave(); });
 // מיישר רשימה מכל גרסה לצורה הנוכחית
 function normalize(st){
   const out = EMPTY(); if (!st) return out;
@@ -370,7 +418,8 @@ function normalize(st){
 }
 function mergeDraft(base, draft){
   const out = normalize(base); if (!draft) return out; const d = normalize(draft);
-  if (d.profile) out.profile = d.profile;
+  // הטיוטה (מלפני ההתחברות) מעדכנת תאריך/תאומים/לידה ראשונה — אבל giftSalt של השרת נשאר, אחרת כל קישורי המתנות מתבטלים (3.1ג)
+  if (d.profile) { const salt = out.profile && out.profile.giftSalt; out.profile = { ...(out.profile || {}), ...d.profile }; if (salt) out.profile.giftSalt = salt; }
   if (d.tour) out.tour = 1;
   Object.assign(out.sel, d.sel); Object.assign(out.have, d.have);
   const ids = new Set(out.custom.map(c => c.id)); d.custom.forEach(c => { if (!ids.has(c.id)) out.custom.push(c); });
@@ -440,7 +489,7 @@ function renderOnboard(){
   $('#obNext', el).onclick = () => {
     if (cur !== 'first') { OB.step++; renderOnboard(); return; }
     const editing = !!S.profile;
-    S.profile = { due: OB.due, twins: OB.twins, first: OB.first };
+    S.profile = { ...(S.profile || {}), due: OB.due, twins: OB.twins, first: OB.first };   // מיזוג — giftSalt (קישורי המתנות) נשאר (ביקורת 24.9, 3.1ג)
     if (editing) { save(); enterApp(); toast('הפרטים עודכנו'); return; }
     ls.set('bl_draft', S);           // הטיוטה נשמרת כבר עכשיו — עוד לפני ההרשמה
     // דניאל, 15.9: בלי מסך ביניים — הכפתור מוביל ישר להתחברות של שופיפיי
@@ -1995,19 +2044,33 @@ $('#btnSettings').onclick = () => {
 /* =====================================================================
    הפעלה
    ===================================================================== */
+function showLoadError(title, msg){ $('#errTitle').textContent = title; $('#errMsg').textContent = msg; showScreen('screen-error'); }
 async function boot(){
   showScreen('screen-loading');
   try { await loadData(); }
-  catch (e) { $('#errMsg').textContent = 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'; showScreen('screen-error'); return; }
+  catch (e) { showLoadError('לא הצלחנו לטעון את המחירים', 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'); return; }
   // עמוד מתנות לאורח/ת — קישור עם ?gift=<טוקן>, בלי חשבון ובלי מסך הרשמה כלל.
   const giftToken = new URL(location.href).searchParams.get('gift');
   if (giftToken) { $('#btnRetry').onclick = () => bootGiftView(giftToken); bootGiftView(giftToken); return; }
+  // כל תקלה לא צפויה מכאן והלאה → מסך שגיאה עם "לנסות שוב", ולא גלגל טעינה לנצח (ביקורת 24.9, 3.1ב)
+  try { await bootAccount(); }
+  catch (e) { console.error('[birthlist] boot failed:', e); showLoadError('משהו השתבש בטעינה', 'כדאי לנסות שוב. (' + ((e && e.message) || e) + ')'); }
+}
+async function bootAccount(){
   const draftBack = Identity.completeSignIn();    // האם חזרנו מהתחברות (יש טיוטה מקודדת בכתובת)?
   USER = await Identity.current();                // מי מחובר/ת עכשיו, לפי שופיפיי
   IS_ADMIN = !!(USER && USER.admin);
+  // הרשימה השמורה: רק טעינה שהצליחה פותחת את השמירה (LIST_LOADED). כישלון → מסך שגיאה עם
+  // "לנסות שוב" — לא מסך הרשמה (שהיה מסתיים בדריסת הרשימה השמורה ברשימה ריקה). ביקורת 24.9, 3.1א.
+  LIST_LOADED = false;
+  let saved = null;
+  if (USER) {
+    try { saved = await Identity.loadList(); LIST_LOADED = true; }
+    catch (e) { showLoadError('לא הצלחנו לטעון את הרשימה שלך', 'הרשימה שמורה בחשבון — רק לא הצלחנו להביא אותה עכשיו. כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'); return; }
+  }
   if (draftBack) {
     if (USER) {
-      S = mergeDraft(await Identity.loadList(), draftBack.draft);
+      S = mergeDraft(saved, draftBack.draft);
       save();
       if (!S.profile) { renderOnboard(); return; }
       enterApp(); toast('ההרשמה הושלמה — הרשימה נשמרה');
@@ -2017,7 +2080,7 @@ async function boot(){
     S = normalize(draftBack.draft || EMPTY()); renderSignIn(); return;
   }
   if (USER) {
-    S = normalize(await Identity.loadList());
+    S = normalize(saved);
     if (!S.profile) { renderOnboard(); return; }
     enterApp(); return;
   }
