@@ -180,6 +180,14 @@ async function loadData(){
   const data = await fetch(CONFIG.DATA_BASE + 'bl_data.json?v=' + ver.v).then(r => { if (!r.ok) throw new Error('data ' + r.status); return r.json(); });
   if (!data.items || !data.models || !data.stores) throw new Error('bad data');
   VERSION = ver; DATA = data;
+  // מ-25.9 (שלב 2 של מסמך 48): `v` נשאר כשהמחירים לא זזו, ולכן bl_data.json יכול להישאר
+  // בטלפון כמה לילות. תאריכי הסריקה האמיתיים מגיעים מ-bl_version.json — שנקרא מחדש בכל
+  // טעינה, בלי מטמון — ומונחים כאן על הקובץ, כדי שחנות לא תיראה "ישנה" (או תוסתר) בטעות.
+  for (const [sid, src] of Object.entries(ver.sources || {})) {
+    const st = data.stores[sid]; if (!st || !src) continue;
+    if (src.scanned) st.d = src.scanned;
+    if (src.products) st.p = src.products;
+  }
   // תיקוני המנהל (של דניאל) — אם אינם זמינים, הכלי עובד רגיל עם הקובץ כמו שהוא
   try {
     const r = await fetch(APP_PROXY_BASE + 'overrides', {credentials:'same-origin', cache:'no-store'});
@@ -1020,7 +1028,27 @@ function adminRemovedList(onlyItem){
    (מתוך bl_admin.json). הכפתורים שמתקנים כבר ממילא כאן, ולכן גם המסך כאן. */
 let ADMIN_DOC = null, HEALTH_DOC = null;
 const STEP_HE = {'offline-suite':'בדיקת המנוע', 'bundle-tests':'בדיקות החבילה',
-                 'live-refresh':'סריקת החנויות', 'publish':'הפרסום'};
+                 'live-refresh':'סריקת החנויות', 'publish':'הפרסום',
+                 'r2-upload':'ההעלאה ל-R2 (מה שהכלי קורא)'};
+const STALE_SOON_DAYS = 21;   // מכאן: "תוסתר בעוד N ימים" — כמו health.py (STALE_SOON)
+const REFRESH_MAX_HOURS = 36; // רענון שלא רץ יותר מזה = אזעקה (מסמך 48 §3.2א)
+const storeName = sid => (STORES[sid] && STORES[sid].n) || sid;
+// אזהרות שהריצה הלילית רשמה (health.py): חנות שחזרה קטנה, חנות קפואה שמתקרבת להסתרה, מראה שנפל
+function runWarnings(r){
+  const out = (r.warn || []).map(w => 'now' in w
+    ? `⚠️ ${esc(storeName(w.s))} חזרה עם ${w.now} מוצרים במקום כ-${w.was}`
+    : `⏳ ${esc(storeName(w.s))} נסרקה לפני ${w.age} ימים — ${w.hideIn > 0 ? `תוסתר מהכלי בעוד ${w.hideIn} ימים` : 'כבר מוסתרת מהכלי'}`);
+  if (r.mirror === 'failed') out.push('המראה ב-GitHub Pages נכשל (R2, שהכלי קורא, תקין)');
+  return out.map(t => `<div class="st-warn">${t}</div>`).join('');
+}
+// הרענון שלא רץ: bl_health.json רושם רק ריצות שהתחילו, ולכן הבדיקה כאן היא על גיל הפרסום עצמו
+function statusFresh(){
+  const built = VERSION && VERSION.built;
+  if (!built) return '';
+  const hrs = Math.floor((Date.now() - new Date(built)) / 36e5);
+  if (hrs > REFRESH_MAX_HOURS) return `<div class="st-alert">⚠️ הרענון הלילי לא רץ מאז ${esc(whenHe(built))} (לפני ${hrs} שעות). האמהות רואות מחירים ישנים. להפעיל ידנית: GitHub → Actions → "Daily refresh & publish" → Run workflow.</div>`;
+  return `<p style="font-size:13px;color:var(--sage);margin:4px 0 0">הנתונים באתר מהרענון של ${esc(whenHe(built))}${VERSION.counts && VERSION.counts.fixes != null ? ` · ${VERSION.counts.fixes} תיקונים שלך בקובץ` : ''}.</p>`;
+}
 const whenHe = iso => {
   const d = daysAgo(iso);
   const t = new Date(iso).toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'});
@@ -1046,18 +1074,19 @@ function statusRuns(){
     + runs.slice(0, 10).map(r => `<div class="st-row"><span class="st-dot">${r.ok ? '✅' : '⚠️'}</span>
       <div class="st-main"><div class="st-t">${esc(whenHe(r.at))}${r.trigger === 'schedule' ? ' · אוטומטי' : ' · הופעל ידנית'}</div>
       ${r.ok
-        ? `<div class="st-s">${r.counts ? `${r.counts.models} מוצרים · ${r.counts.offers} מחירים` : 'פורסם'}</div>`
-        : `<div class="st-err">נפל ב${esc(STEP_HE[r.step] || r.step || 'שלב לא ידוע')} — ${esc(r.error || 'בלי פירוט')}</div>`}</div>
+        ? `<div class="st-s">${r.counts ? `${r.counts.models} מוצרים · ${r.counts.offers} מחירים${r.counts.fixes != null ? ` · ${r.counts.fixes} תיקונים` : ''}` : 'פורסם'}</div>`
+        : `<div class="st-err">נפל ב${esc(STEP_HE[r.step] || r.step || 'שלב לא ידוע')} — ${esc(r.error || 'בלי פירוט')}</div>`}${runWarnings(r)}</div>
       ${r.url ? `<a class="btn ghost small" href="${esc(r.url)}" target="_blank" rel="noopener">ללוג</a>` : ''}</div>`).join('');
 }
 function statusStores(){
   return Object.values(STORES).map(s => {
     const d = daysAgo(s.d);
     const cls = s.hidden ? 'st-err' : (s.stale ? 'st-err' : 's-ok');
-    return `<div class="st-row"><span class="st-dot">${s.hidden ? '⚠️' : s.stale ? '🕓' : '✅'}</span>
+    const soon = !s.hidden && d >= STALE_SOON_DAYS;
+    return `<div class="st-row"><span class="st-dot">${s.hidden ? '⚠️' : soon ? '⏳' : s.stale ? '🕓' : '✅'}</span>
       <div class="st-main"><div class="st-t">${esc(s.n)}</div>
       <div class="${cls === 's-ok' ? 'st-s' : 'st-err'}">${esc(fmtChecked(s.d))}${s.p ? ` · ${s.p} מוצרים` : ''}${
-        s.hidden ? ` — המחירים שלה כבר לא מוצגים` : s.stale ? ' — כדאי לסרוק' : ''}</div></div></div>`;
+        s.hidden ? ` — המחירים שלה כבר לא מוצגים` : soon ? ` — תוסתר מהכלי בעוד ${CONFIG.STALE_HIDE_DAYS - d} ימים, לסרוק עכשיו` : s.stale ? ' — כדאי לסרוק' : ''}</div></div></div>`;
   }).join('');
 }
 // Shops whose full listing Daniel asked to see. A row can hold 50 listings, so each
@@ -1261,7 +1290,7 @@ function renderStatus(){
   const q = openReview();
   const p = openPairs();
   const built = ADMIN_DOC && ADMIN_DOC.built;
-  openModal(`<h2>מצב הכלי</h2>
+  openModal(`<h2>מצב הכלי</h2>${statusFresh()}
     <div class="ttl" style="margin-top:12px">הריצות האחרונות</div>${statusRuns()}
     <div class="ttl" style="margin-top:18px">החנויות</div>${statusStores()}
     <div class="ttl" style="margin-top:18px">ממתין להכרעה שלך${q.length ? ` (${q.length})` : ''}</div>${statusQueue()}

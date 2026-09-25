@@ -98,6 +98,8 @@
 #bl .st-t{font-size:13px;font-weight:600}
 #bl .st-s{font-size:12px;color:var(--muted)}
 #bl .st-err{font-size:12px;color:var(--rose);word-break:break-word}
+#bl .st-alert{font-size:13px;color:var(--rose);border:1px solid var(--rose);border-radius:10px;padding:8px 10px;margin:8px 0 4px;line-height:1.5}
+#bl .st-warn{font-size:12px;color:var(--rose);margin-top:2px}
 #bl .rq{border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px;background:var(--surface)}
 #bl .rq-head{display:flex;gap:9px;align-items:flex-start}
 #bl .rq-pic{width:46px;height:46px;flex:0 0 auto;object-fit:contain;border-radius:8px;background:var(--surface-2)}
