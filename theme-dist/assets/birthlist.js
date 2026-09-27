@@ -72,6 +72,8 @@ const ls = {
 };
 const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
+// קישור שמותר לשים ב-href: http(s) בלבד. "מוצר משלי" עם javascript: וכדומה לא יוצא לאף אחד (ביקורת 24.9, 3.3ו).
+const safeHttpUrl = u => (typeof u === 'string' && /^https?:\/\/\S+$/i.test(u.trim())) ? u.trim() : '';
 
 /* =====================================================================
    מתג הזהות — "מי מחובר/ת" + שמירה/טעינה של הרשימה.
@@ -162,6 +164,7 @@ const Identity = (() => {
         catch(e) { if (!init.keepalive) throw e; delete init.keepalive; r = await fetch(APP_PROXY_BASE + 'list', init); } // keepalive מוגבל ל-64KB — נופלים חזרה לשמירה רגילה
         let d = null; try { d = await r.json(); } catch(e) {}
         if (d && d.ok) return {ok:true};
+        if (d && d.error === 'too_large') return {ok:false, err: 'הרשימה גדולה מדי לשמירה (מעל ' + Math.round((+d.max || 0) / 1024) + 'KB) — כדאי להסיר מוצרים שכבר לא צריך'};
         return {ok:false, err: 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '')};
       } catch(e) { return {ok:false, err: 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : '')}; }
     },
@@ -420,7 +423,7 @@ function normalize(st){
   const out = EMPTY(); if (!st) return out;
   out.profile = st.profile || null; out.open = st.open ?? null; out.have = {...(st.have || {}), ...(st.skip || {})};
   out.tour = st.tour ? 1 : 0;                       // 1 = ההדרכה כבר הוצגה לחשבון הזה
-  out.custom = Array.isArray(st.custom) ? st.custom : [];
+  out.custom = (Array.isArray(st.custom) ? st.custom : []).map(c => (c && c.url && !safeHttpUrl(c.url)) ? {...c, url:''} : c);
   for (const [k, v] of Object.entries(st.sel || {})) { const arr = Array.isArray(v) ? v : (v ? [v] : []); out.sel[k] = arr.map(p => ({id: p.id || uid(), who: p.who || 'me', ...p})); if (!out.sel[k].length) delete out.sel[k]; }
   return out;
 }
@@ -1741,7 +1744,11 @@ function openManual(itemId, cat){
   $('#mfCancel').onclick = closeModal;
   $('#mfSave').onclick = () => {
     const price = parseFloat($('#mfPrice').value); if (isNaN(price)) { $('#mfPrice').focus(); return toast('צריך מחיר כדי שהמוצר ייכנס לסיכום'); }
-    const q = Math.max(1, parseInt($('#mfQty').value) || 1), store = $('#mfStore').value.trim(), url = $('#mfUrl').value.trim();
+    const q = Math.max(1, parseInt($('#mfQty').value) || 1), store = $('#mfStore').value.trim();
+    let url = $('#mfUrl').value.trim();
+    if (url && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;              // "shop.co.il/x" → https://shop.co.il/x
+    if (url && !safeHttpUrl(url)) { $('#mfUrl').focus(); return toast('הקישור צריך להתחיל ב-https://'); }
+    url = safeHttpUrl(url);
     const linked = it || (($('#mfItem') && $('#mfItem').value) ? itemById[+$('#mfItem').value] : null);
     let name = linked ? linked.n : $('#mfName').value.trim(); if (!name) { $('#mfName').focus(); return toast('מה שם המוצר?'); }
     S.custom.push({ id: uid(), i: linked ? linked.id : null, c: linked ? linked.c : $('#mfCat').value, name, store, price, url, q, who:'me' });
@@ -1954,12 +1961,18 @@ function renderGiftLinkModal(token){
 /* ---------- עמוד מתנות לאורח/ת (בלי חשבון) ---------- */
 function giftLocalKey(token){ return 'bl_gift_mine_' + token.split('.').slice(0,2).join('.'); }
 function giftLocalGet(token){ return ls.get(giftLocalKey(token)) || {}; }
+// מה שנשמר אצל הנותן/ת לכל שורה שתפס/ה: {id, tok} — מזהה התפיסה והטוקן האישי לביטול (שלב 3 של מסמך 48).
+// תפיסות מלפני שלב 3 נשמרו כמחרוזת (מזהה בלבד) — עדיין נקראות.
+const giftMineId = v => typeof v === 'string' ? v : ((v && v.id) || '');
+const giftMineTok = v => (v && typeof v === 'object' && v.tok) || '';
 function giftLocalSet(token, map){ ls.set(giftLocalKey(token), map); }
 async function bootGiftView(token){
   showScreen('screen-loading');
   let d;
   try {
-    const r = await fetch(APP_PROXY_BASE + 'gift?t=' + encodeURIComponent(token), {credentials:'same-origin', cache:'no-store'});
+    // e = מזהי התפיסות שלי — השרת מחזיר לכל שורה רק כמה נתפס ואם אחת התפיסות היא שלי (בלי שמות של אחרים)
+    const ids = Object.values(giftLocalGet(token)).map(giftMineId).filter(Boolean);
+    const r = await fetch(APP_PROXY_BASE + 'gift?t=' + encodeURIComponent(token) + (ids.length ? '&e=' + encodeURIComponent(ids.join(',')) : ''), {credentials:'same-origin', cache:'no-store'});
     d = await r.json();
   } catch(e) { d = null; }
   if (!d || !d.ok) {
@@ -1979,10 +1992,9 @@ function renderGiftScreen(list, claims, token){
   const gs = lines(normalize(list)).filter(l => l.who === 'gift');
   const mine = giftLocalGet(token);
   const row = g => {
-    const c = claims[g.key] || {claimed:0, entries:[]};
+    const c = claims[g.key] || {claimed:0};
     const remaining = Math.max(0, g.qty - c.claimed);
-    const myEntryId = mine[g.key];
-    const already = !!myEntryId && c.entries.some(e => e.id === myEntryId);
+    const already = !!giftMineId(mine[g.key]) && !!c.mine;   // השרת מאשר שהתפיסה השמורה אצלי עדיין קיימת
     // השוואת מחירים: כל החנויות שמוכרות את הדגם, מהזולה ליקרה (הבחירה של האמא מודגשת)
     const offers = g.model ? g.model.offers.filter(o => STORES[o.sid] && !STORES[o.sid].hidden).slice().sort((a, b) => a.p - b.p) : [];
     GUEST_ROWS[g.key] = g;
@@ -2046,15 +2058,19 @@ async function giftClaim(lineKey, qty, giverName, token){
     const d = await r.json();
     closeModal();
     if (!d || !d.ok) { toast(d && d.error === 'oversubscribed' ? ('מישהי כבר תפסה בדיוק עכשיו — נשארו ' + d.remaining) : 'לא הצלחנו לשמור, לנסות שוב'); bootGiftView(token); return; }
-    const mine = giftLocalGet(token); mine[lineKey] = d.entryId; giftLocalSet(token, mine);
+    const mine = giftLocalGet(token); mine[lineKey] = {id: d.entryId, tok: d.claimToken || ''}; giftLocalSet(token, mine);
     toast('תודה! נשמר'); bootGiftView(token);
   } catch(e) { closeModal(); toast('בעיית חיבור — לנסות שוב'); }
 }
 async function giftUnclaim(lineKey, token){
-  const mine = giftLocalGet(token); const entryId = mine[lineKey]; if (!entryId) return;
+  const mine = giftLocalGet(token); const rec = mine[lineKey], entryId = giftMineId(rec); if (!entryId) return;
+  let ok = false;
   try {
-    await fetch(APP_PROXY_BASE + 'gift-unclaim', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({token, lineKey, entryId})});
+    const r = await fetch(APP_PROXY_BASE + 'gift-unclaim', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({token, lineKey, entryId, claimToken: giftMineTok(rec)})});
+    let d = null; try { d = await r.json(); } catch(e) {}
+    ok = !!(d && (d.ok || d.error === 'not_found'));   // not_found = כבר לא קיימת — אין מה לבטל
   } catch(e) {}
+  if (!ok) { toast('לא הצלחנו לבטל — לנסות שוב'); bootGiftView(token); return; }
   delete mine[lineKey]; giftLocalSet(token, mine);
   toast('בוטל'); bootGiftView(token);
 }
