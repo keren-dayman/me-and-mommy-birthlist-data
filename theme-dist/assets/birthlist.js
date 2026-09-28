@@ -176,7 +176,7 @@ const Identity = (() => {
    ===================================================================== */
 let DATA = null, VERSION = null, STORES = {}, ITEMS = [], MODELS = [], CATS = [];
 let modelsByItem = {}, modelById = {}, itemById = {}, hiddenByItem = {};
-let OVERRIDES = { v:1, models:{} }, IS_ADMIN = false, RAW_MODELS = null;
+let OVERRIDES = { v:1, models:{} }, IS_ADMIN = false, RAW_MODELS = null, RAW_IDS = new Set();
 
 async function loadData(){
   const ver = await fetch(CONFIG.DATA_BASE + 'bl_version.json?t=' + Date.now(), {cache:'no-store'}).then(r => { if (!r.ok) throw new Error('version ' + r.status); return r.json(); });
@@ -255,6 +255,7 @@ function prepareData(){
   ITEMS.forEach(i => { itemById[i.id] = i; modelsByItem[i.id] = []; });
   CATS = [...new Set(ITEMS.map(i => i.c))];
   RAW_MODELS = RAW_MODELS || DATA.models;    // המקור נשמר כמו שהוא — התיקונים מוחלים על עותקים, כך שאפשר להחיל מחדש
+  RAW_IDS = new Set(RAW_MODELS.map(m => m.id));
   MODELS = [];
   const ovAll = OVERRIDES.models || {};
   for (const raw of RAW_MODELS) {
@@ -277,9 +278,10 @@ function prepareData(){
     if (ov.hide) { m.adminHidden = true; (hiddenByItem[m.i] = hiddenByItem[m.i] || []).push(m); continue; }
     if (modelsByItem[m.i]) { modelsByItem[m.i].push(m); MODELS.push(m); }
   }
-  // איחוד שורות: שורה שנבלעה בתוך אחרת משאירה כינוי. רשימה שנשמרה על השורה
-  // הישנה חייבת עדיין למצוא את המוצר — אחרת איחוד היה מרוקן למישהי את הרשימה.
-  for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (modelById[to]) modelById[from] = modelById[to];
+  // כינויים: שורה שנבלעה באיחוד, מזהה שזז (שינוי כותרת, מוצר שנעלם מהפיד), מוצר ידני
+  // שהסריקה מצאה — כולם משאירים כינוי, וגם מלילות קודמים (שלב 4 של מסמך 48). רשימה
+  // שנשמרה על המזהה הישן חייבת עדיין למצוא את המוצר. כינוי לעולם לא דורס שורה חיה.
+  for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (!RAW_IDS.has(from) && modelById[to]) modelById[from] = modelById[to];
   applyMergesLive();      // איחודים שהמנהל עשה היום — לראות מיד, לא רק אחרי העדכון הלילי
   applyManualLive();      // חנות שנוספה להשוואה עם מחיר ידני — אותו דבר
   for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
@@ -303,11 +305,12 @@ function applyMergesLive(){
     const ids = (g || []).map(String).filter(id => modelById[id]);
     if (ids.length < 2) continue;
     const keep = modelById[ids[0]];
+    const hsKeep = new Set(ovOf(keep.id).hs || []);      // חנות שהוסתרה על השורה השורדת נשארת מוסתרת (48 §3.4/5)
     for (const oid of ids.slice(1)) {
       const o = modelById[oid];
       if (!o || o === keep || o.i !== keep.i) continue;
       const have = new Set(keep.offers.map(x => x.sid));
-      o.offers.forEach(x => { if (!have.has(x.sid)) keep.offers.push(x); });
+      o.offers.forEach(x => { if (!have.has(x.sid) && !hsKeep.has(x.sid)) keep.offers.push(x); });
       if (o.cl && o.cl.length) keep.cl = [...new Set([...(keep.cl || []), ...o.cl])];
       if (!keep.img && o.img) keep.img = o.img;
       dropFromGallery(o);
@@ -373,6 +376,59 @@ async function adminApply(mid, patch, msg){
   setOverride(mid, patch);
   prepareData(); renderList();
   toast((await saveOverrides()) ? msg : 'התיקון מוצג אצלך, אבל השמירה נכשלה — לנסות שוב' + saveErrNote());
+}
+/* שלב 4 של מסמך 48 (§3.1ד) — מזהים שזזו. מסמך התיקונים בווקר הוא העותק היחיד של תיקוני
+   המנהל, ומפתחותיו הם מזהי מוצרים. כשמזהה זז (שינוי כותרת בחנות, מוצר שנעלם מהפיד, איחוד,
+   מוצר ידני שהסריקה מצאה) הבנייה הלילית מעתיקה את התיקון למזהה החדש — אבל רק בקובץ שהיא
+   בונה; המסמך עצמו נשאר על המפתח הישן. כאן, בכניסת המנהל, המסמך עובר למזהים הנוכחיים לפי
+   מפת ה-moves מ-bl_admin.json ונשמר — כך ביטול תיקון על המזהה החדש לא "קם לתחייה" מהמפתח
+   הישן בלילה שאחרי. אותם כללים כמו rekey_overrides במנוע; עוברים רק למזהה שקיים בקובץ של היום. */
+function movesTargets(moves){
+  const to = {};
+  // כינוי שנולד מקבוצת איחוד של המנהל ("m": 1) לא מעביר תיקונים: השורה הנבלעת עדיין קיימת, והמזהה שלה בקבוצה הוא ההוראה עצמה
+  for (const [old, e] of Object.entries(moves || {})) { if (e && typeof e === 'object' && e.m) continue; const t = e && typeof e === 'object' ? e.to : e; if (typeof t === 'string' && t && t !== old && RAW_IDS.has(t)) to[old] = t; }
+  return to;
+}
+function rekeyOverridesBy(moves){
+  const to = movesTargets(moves); let changed = false;
+  if (!Object.keys(to).length) return false;
+  for (const key of ['models', 'review', 'drop']) {
+    const src = OVERRIDES[key]; if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
+    for (const [old, cur] of Object.entries(to)) {
+      if (!(old in src) || RAW_IDS.has(old)) continue;
+      if (!(cur in src)) src[cur] = src[old];
+      delete src[old]; changed = true;
+    }
+  }
+  if (Array.isArray(OVERRIDES.merge)) OVERRIDES.merge = OVERRIDES.merge.map(g => {
+    const out = [];
+    for (const x of (g || [])) { const s = String(x), v = (to[s] && !RAW_IDS.has(s)) ? to[s] : s; if (v !== s) changed = true; if (!out.includes(v)) out.push(v); }
+    return out;
+  });
+  for (const e of Object.values(OVERRIDES.manual || {})) if (e && e.attach && to[e.attach] && !RAW_IDS.has(e.attach)) { e.attach = to[e.attach]; changed = true; }
+  return changed;
+}
+async function migrateAdminOverrides(){
+  if (!IS_ADMIN) return false;
+  if (!ADMIN_DOC) await loadAdminFiles();
+  const moves = ADMIN_DOC && ADMIN_DOC.moves;
+  if (!moves || typeof moves !== 'object' || !rekeyOverridesBy(moves)) return false;
+  prepareData(); renderList();
+  const ok = await saveOverrides();
+  console.info('[birthlist] admin fixes moved to current product ids:', ok ? 'saved' : 'NOT saved' + saveErrNote());
+  return ok;
+}
+/* שורה שמורה שמצביעה על מזהה שהוחלף נכתבת מחדש למזהה הנוכחי — פעם אחת, בכניסה. אחרי
+   זה הכינוי כבר לא נדרש לרשימה הזאת, ולכן המנוע יכול לשכוח כינוי ישן אחרי 60 יום. */
+function followAliases(){
+  const al = (DATA && DATA.alias) || {}; let changed = false;
+  const cur = id => { let x = id, n = 0; while (al[x] && !RAW_IDS.has(x) && n++ < 20) x = al[x]; return x; };
+  for (const arr of Object.values(S.sel || {})) for (const p of arr) {
+    if (!p.m || RAW_IDS.has(p.m) || !al[p.m]) continue;
+    const to = cur(p.m); if (to !== p.m && RAW_IDS.has(to)) { p.m = to; changed = true; }
+  }
+  if (changed) save();
+  return changed;
 }
 
 /* =====================================================================
@@ -561,8 +617,10 @@ function enterApp(){
   sb.hidden = !parts.length; sb.textContent = parts.join(' ');
   $('#footNote').innerHTML = `מזהה גרסה: ${VERSION.v}. המחיר הסופי הוא תמיד המחיר באתר החנות.`;
   fixCustomCats();
+  followAliases();
   renderAll();
   renderRefer();
+  if (IS_ADMIN) migrateAdminOverrides();
   refreshGiftClaims().then(changed => { if (changed && UI.view === 'list') renderList(); });
   if (!S.tour) setTimeout(() => { if (!S.tour && $('#modalBg').hidden) openTour(); }, 400);   // פעם אחת לכל חשבון
 }
