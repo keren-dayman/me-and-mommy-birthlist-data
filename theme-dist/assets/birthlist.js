@@ -889,7 +889,7 @@ function renderCustomPick(c){
 const todayISO = () => TODAY.getFullYear() + '-' + String(TODAY.getMonth() + 1).padStart(2, '0') + '-' + String(TODAY.getDate()).padStart(2, '0');
 function boughtTag(t){ return t.b ? `<span class="tagline"><span class="tag best">נקנה ✓${/^\d{4}-\d{2}-\d{2}$/.test(t.b) ? ' · ' + esc(fmtDate(t.b)) : ''}</span></span>` : ''; }
 // "קניתי" — הכפתור יושב רק בלשונית החודשים (החלטת דניאל 29.9 ערב: שם האמא בודקת מה לקנות; ברשימה רק התג).
-function boughtBtn(key, bought){ return bought ? `<button type="button" class="btn small ghost" data-bought="0" data-key="${key}" style="color:var(--peach-ink)">לבטל "קניתי"</button>` : `<button type="button" class="btn small soft" data-bought="1" data-key="${key}">קניתי ✓</button>`; }
+function boughtBtn(key, bought){ return bought ? `<button type="button" class="btn small bought-on" data-bought="0" data-key="${key}" title="לבטל">נקנה ✓</button>` : `<button type="button" class="btn small soft" data-bought="1" data-key="${key}">קניתי ✓</button>`; }
 // המתג עצמו — מקום אחד: b = תאריך הקנייה (נשמר ב-normalize), buyQty מחזיר 0, guestView בווקר מדלג
 function setBought(key, on){ const f = findByKey(key), t = f.custom || f.pick; if (!t) return false; if (on) t.b = todayISO(); else delete t.b; save(); renderList(); toast(on ? 'סומן: נקנה ✓ — ירד מהתקציב' : 'הסימון בוטל — חזר לתקציב'); return true; }
 function renderItem(it){
@@ -1986,13 +1986,17 @@ function monthPlan(){
   const n = months.length;
   const byItem = {}; lines().forEach(l => { const k = l.itemId || l.key; (byItem[k] ||= []).push(l); });
   const entries = [];
+  // cost = לצורך המיקום והאיזון: מוצר שסומן "קניתי" נספר כאילו עוד קונים אותו — אחרת המחיר יורד לאפס,
+  // האיזון מחזיר אותו לחודש ההמלצה המקורי, והאמא רואה אותו "נעלם" מהחודש שבו סימנה (דניאל, 29.9 לילה).
+  // spend = מה שבאמת נשאר לקנות — זה מה שמוצג בסכום החודש.
+  const placeCost = ls_ => ls_.reduce((a, l) => a + l.price * (l.bought ? (l.who === 'given' ? 0 : (l.who === 'gift' ? Math.max(0, (l.qty || 1) - claimedOf(l.key)) : (l.qty || 1))) : buyQty(l)), 0);
   const add = (key, it, cat, ls_, name) => { const nb = monthsBefore(it, cat);
-    entries.push({ key, it, name, ls: ls_, nb, cost: totalBuy(ls_), locked: monthLocked(it), target: n - 1 - nb }); };
+    entries.push({ key, it, name, ls: ls_, nb, cost: placeCost(ls_), spend: totalBuy(ls_), locked: monthLocked(it), target: n - 1 - nb }); };
   ITEMS.filter(i => !S.have[i.id]).forEach(it => add('i' + it.id, it, catKey(it.c), byItem[it.id] || [], it.n));
   S.custom.filter(c => !c.i).forEach(c => add('c' + c.id, null, catKey(c.c), byItem['c' + c.id] || [], c.name));
   const { idx, moves } = balanceMonths(entries, n, CONFIG.MONTH_MAX_EARLY);
   entries.forEach(e => { const mo = months[idx.get(e.key)];
-    mo.items.push({ name: e.name, it: e.it, ls: e.ls, nb: e.nb, moved: moves.get(e.key) || 0 }); mo.sum += e.cost; });
+    mo.items.push({ name: e.name, it: e.it, ls: e.ls, nb: e.nb, moved: moves.get(e.key) || 0 }); mo.sum += e.spend; });
   months.forEach(mo => mo.items.sort((a, b) => (b.ls.length ? 1 : 0) - (a.ls.length ? 1 : 0)));
   return months;
 }
@@ -2002,7 +2006,7 @@ function renderMonths(){
   const sum = plan.reduce((a, m) => a + m.sum, 0), nItems = plan.reduce((a, m) => a + m.items.length, 0);
   const nMoved = plan.reduce((a, m) => a + m.items.filter(x => x.moved > 0).length, 0);
   $('#view-months').innerHTML = `<div class="card"><div class="bigline"><b class="num">${nis(sum)}</b><span class="muted">${nItems} פריטים על פני ${plan.length} חודשים</span></div><p class="why">לפי ההמלצה של me &amp; mommy מתי לקנות כל קטגוריה, ${nMoved ? 'ומחולק כך שההוצאה תתפזר בין החודשים ולא תיפול על חודש אחד' : 'ובתוספת איזון של ההוצאה בין החודשים'}. המוצרים הגדולים נשארים במועד שלהם. פריט בלי מחיר = עוד לא נבחר לו מוצר. <button type="button" class="btn small ghost" id="editDue" style="padding:2px 8px;color:var(--peach-ink)">תאריך: ${esc(dueText())} ✎</button></p></div>
-    <div class="tl">${plan.map(m => { const mls = m.items.flatMap(x => x.ls), allBought = mls.length > 0 && mls.every(l => l.bought); return `<div class="month${allBought ? ' done' : ''}"><div class="card"><header><h3>${MONTHS_HE[m.m]} ${m.y}</h3><b class="num">${allBought ? '<span class="tag best">✓ הכל נקנה</span>' : nis(m.sum)}</b></header>${m.items.length ? `<ul>${m.items.map(({name, it, ls: ls_, nb, moved}) => { return `<li class="${ls_.length?'':'open'}"><span><span class="n">${esc(name)}</span><small>${ls_.length ? '' : 'עוד לא נבחר מוצר'}${nb ? `${ls_.length ? '' : ' · '}מומלץ כ-${nb} חודשים לפני` : `${ls_.length ? '' : ' · '}סמוך ללידה`}${moved ? ` · הוקדם ב-${moved} ${moved === 1 ? 'חודש' : 'חודשים'} לאיזון ההוצאה` : ''}</small></span><span class="num" style="font-weight:700">${ls_.length ? nis(totalBuy(ls_)) : (it ? '<button type="button" class="btn small soft" data-pick="' + it.id + '">לבחור</button>' : '')}</span>${ls_.length ? `<div class="mlines">${ls_.map(l => { const g = giftLabel(l); return `<div class="mline${l.bought ? ' done' : ''}" data-key="${esc(l.key)}"><span><span class="mn">${esc(l.name)}</span>${l.store ? ` <small>· ${esc(l.store)}${l.qty > 1 ? ` · ×${l.qty}` : ''}</small>` : ''}${g ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}</span>${l.who === 'given' ? '' : boughtBtn(l.key, !!l.bought)}</div>`; }).join('')}</div>` : ''}</li>`; }).join('')}</ul>` : `<div class="why" style="margin:0">חודש חופשי — אין קניות</div>`}</div></div>`; }).join('')}</div>`;
+    <div class="tl">${plan.map(m => { const mls = m.items.flatMap(x => x.ls), allBought = mls.length > 0 && mls.every(l => l.bought); return `<div class="month${allBought ? ' done' : ''}"><div class="card"><header><h3>${MONTHS_HE[m.m]} ${m.y}</h3><b class="num">${allBought ? '<span class="tag best">✓ הכל נקנה</span>' : nis(m.sum)}</b></header>${m.items.length ? `<ul>${m.items.map(({name, it, ls: ls_, nb, moved}) => { return `<li class="${ls_.length?'':'open'}"><span><span class="n">${esc(name)}</span><small>${ls_.length ? '' : 'עוד לא נבחר מוצר'}${nb ? `${ls_.length ? '' : ' · '}מומלץ כ-${nb} חודשים לפני` : `${ls_.length ? '' : ' · '}סמוך ללידה`}${moved ? ` · הוקדם ב-${moved} ${moved === 1 ? 'חודש' : 'חודשים'} לאיזון ההוצאה` : ''}</small></span><span class="num" style="font-weight:700">${ls_.length ? nis(totalBuy(ls_)) : (it ? '<button type="button" class="btn small soft" data-pick="' + it.id + '">לבחור</button>' : '')}</span>${ls_.length ? `<div class="mlines">${ls_.map(l => { const g = giftLabel(l); return `<div class="mline${l.bought ? ' done' : ''}" data-key="${esc(l.key)}"><span><span class="mn">${esc(l.name)}</span>${l.store ? ` <small>· ${esc(l.store)}${l.qty > 1 ? ` · ×${l.qty}` : ''}</small>` : ''}${g && !l.bought ? ` <span class="tag ${g.cls}">${g.t}</span>` : ''}</span>${l.who === 'given' ? '' : boughtBtn(l.key, !!l.bought)}</div>`; }).join('')}</div>` : ''}</li>`; }).join('')}</ul>` : `<div class="why" style="margin:0">חודש חופשי — אין קניות</div>`}</div></div>`; }).join('')}</div>`;
   $('#editDue').onclick = editProfile;
   // "קניתי" — מכאן בלבד. המוצר נשאר בחודש שלו עם סימון, הסכום של החודש יורד; לחיצה נוספת מחזירה.
   $$('#view-months [data-bought]').forEach(b => b.onclick = () => { if (setBought(b.dataset.key, b.dataset.bought === '1')) renderMonths(); });

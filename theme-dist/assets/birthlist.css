@@ -315,6 +315,7 @@
 #bl .month .mline small{color:var(--muted)}
 #bl .month .mline .btn.small{padding:4px 10px;font-size:13px;white-space:nowrap}
 #bl .month .mline.done .mn{text-decoration:line-through;color:var(--muted)}
+#bl .month .mline .btn.bought-on{background:var(--sage);color:#fff}
 #bl .month.done::before{background:var(--sage)}
 
 /* מתנות */
