@@ -134,18 +134,13 @@
     {% if section.settings.img_group != blank %}"group": {{ section.settings.img_group | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_first != blank %}"first": {{ section.settings.img_first | image_url: width: 480 | json }},{% endif %}
     {% if section.settings.img_lock != blank %}"lock": {{ section.settings.img_lock | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour1 != blank %}"tour1": {{ section.settings.img_tour1 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour2 != blank %}"tour2": {{ section.settings.img_tour2 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour3 != blank %}"tour3": {{ section.settings.img_tour3 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour4 != blank %}"tour4": {{ section.settings.img_tour4 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour5 != blank %}"tour5": {{ section.settings.img_tour5 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour6 != blank %}"tour6": {{ section.settings.img_tour6 | image_url: width: 480 | json }},{% endif %}
-    {% if section.settings.img_tour7 != blank %}"tour7": {{ section.settings.img_tour7 | image_url: width: 480 | json }},{% endif %}
+    {% for block in section.blocks %}{% if block.type == "tour" and block.settings.img != blank and forloop.index <= 7 %}"tour{{ forloop.index }}": {{ block.settings.img | image_url: width: 480 | json }},{% endif %}{% endfor %}
     "_": null
   }
 }
 </script>
 <script src="{{ 'birthlist.js' | asset_url }}" defer></script>
+{%- for block in section.blocks %}<span hidden {{ block.shopify_attributes }}></span>{%- endfor %}
 
 {% schema %}
 {
@@ -342,42 +337,7 @@
     },
     {
       "type": "paragraph",
-      "content": "שבעה מסכי הדרכה שנפתחים פעם אחת לכל משתמשת, וגם מכפתור ההגדרות. בלי תמונה מוצג איור. מומלץ צילומי מסך מהכלי ביחס 4:3, ברוחב 480 ומעלה."
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour1",
-      "label": "תמונה 1"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour2",
-      "label": "תמונה 2"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour3",
-      "label": "תמונה 3"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour4",
-      "label": "תמונה 4"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour5",
-      "label": "תמונה 5"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour6",
-      "label": "תמונה 6"
-    },
-    {
-      "type": "image_picker",
-      "id": "img_tour7",
-      "label": "תמונה 7"
+      "content": "שבעה מסכי הדרכה שנפתחים פעם אחת לכל משתמשת, וגם מכפתור ההגדרות. את התמונות מוסיפים כבלוקים של המקטע (״הוספת בלוק״ ← ״תמונת הדרכה״), לפי הסדר: הבלוק הראשון = מסך 1. בלי תמונה מוצג איור. מומלץ צילומי מסך מהכלי ביחס 4:3, ברוחב 480 ומעלה."
     },
     {
       "type": "text",
@@ -459,6 +419,25 @@
       "unit": "ימ",
       "default": 30
     }
-  ]
+  ],
+  "blocks": [
+    {
+      "type": "tour",
+      "name": "תמונת הדרכה",
+      "limit": 7,
+      "settings": [
+        {
+          "type": "paragraph",
+          "content": "הסדר של הבלוקים = הסדר של מסכי ההדרכה (הראשון = מסך 1). עד 7."
+        },
+        {
+          "type": "image_picker",
+          "id": "img",
+          "label": "תמונה"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 7
 }
 {% endschema %}

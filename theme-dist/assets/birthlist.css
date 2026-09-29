@@ -33,7 +33,6 @@
 #bl .btn.ghost{background:transparent;color:var(--ink-2)}
 #bl .btn.small{padding:7px 13px;font-size:14px}
 #bl .btn.big{padding:14px 26px;font-size:17px;width:100%}
-#bl .btn.danger{background:var(--rose-soft);color:var(--rose)}
 #bl .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 #bl .icon{width:20px;height:20px;flex:0 0 auto}
 
@@ -84,9 +83,6 @@
 #bl .progress i{display:block;height:100%;background:var(--peach-deep);border-radius:4px;transition:width .2s}
 
 /* מסך הרשמה */
-#bl .auth{display:grid;gap:10px;margin:6px 0 16px}
-#bl .or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;margin:4px 0}
-#bl .or::before,#bl .or::after{content:"";flex:1;height:1px;background:var(--line)}
 #bl .admin-box{margin-top:14px;padding:12px;border:2px dashed var(--peach-deep);border-radius:14px;background:var(--surface-2)}
 #bl .admin-box .ttl{font-weight:700;font-size:14px;margin-bottom:8px;color:var(--peach-ink)}
 #bl .admin-box .row-btns{display:flex;flex-wrap:wrap;gap:8px}
@@ -113,7 +109,6 @@
 #bl .rq-x{flex:0 0 auto;border:0;background:none;color:var(--rose);cursor:pointer;font-size:13px;line-height:1.4;padding:0 3px}
 #bl .rq-more{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;text-decoration:underline;padding:3px 0 0}
 #bl .adm-store{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
-#bl .mcard.dim{opacity:.55}
 #bl .mcard.picked{outline:3px solid var(--peach);outline-offset:-1px}
 #bl .mcard.picked::after{content:"✓";position:absolute;top:4px;inset-inline-start:4px;width:24px;height:24px;border-radius:999px;background:var(--peach);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700}
 #bl .mcard-x{position:absolute;top:4px;inset-inline-end:4px;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--surface-2);color:var(--rose);font-size:15px;line-height:1;box-shadow:var(--shadow);cursor:pointer;z-index:1}
@@ -330,7 +325,7 @@
 /* המלצה לחבר/ה — אותו גוש בתחתית כל לשונית. זו הזמנה, לא עוד שורה ברשימה:
    לכן כרטיס משלו, ממורכז, עם שני עיגולי רקע רכים וכפתור בצבע של וואטסאפ. */
 #bl .refer{margin:26px 0 6px}
-#bl .refer-card{position:relative;overflow:hidden;border-radius:var(--r);padding:24px 18px 22px;text-align:center;
+#bl .refer-card{position:relative;overflow:hidden;border-radius:var(--r);padding:24px 18px 22px;text-align:center;max-width:560px;margin-inline:auto;
   background:linear-gradient(145deg,var(--peach-soft) 0%,var(--surface-2) 58%,var(--peach-soft) 100%);
   box-shadow:var(--shadow)}
 #bl .refer-card::before{content:"";position:absolute;inset-inline-end:-46px;top:-52px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.42)}
@@ -340,7 +335,6 @@
 #bl .refer-card h3{font-size:20px;margin-bottom:4px;color:var(--peach-ink)}
 #bl .refer-card p{font-size:14.5px;color:var(--ink-2);margin:0 auto 14px;max-width:32em;line-height:1.55}
 #bl .refer-wa{width:100%;max-width:300px;background:#1FAD55;color:#fff;padding:12px 22px;font-size:16px;box-shadow:0 5px 14px rgba(31,173,85,.28)}
-#bl .refer-card{max-width:560px;margin-inline:auto}
 
 /* "מגיע במתנה" — גוש נפרד, כדי שיהיה ברור שמכאן ולמטה כבר לא קונים */
 #bl .given-box{margin-top:22px;padding:14px 12px 4px;border-radius:var(--r);background:var(--sage-soft);border:1px dashed var(--sage)}

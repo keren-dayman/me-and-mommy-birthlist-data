@@ -17,7 +17,8 @@ const CONFIG = {
   MONTH_MAX_EARLY: 4,           // כמה חודשים לכל היותר מותר להקדים פריט כדי לאזן את ההוצאה החודשית
   STORE_HOME: 'https://memommyclub.com',
 };
-// ⚙️ שלב F: הגדרות מעורך התמה של Shopify (מוזרקות על ידי sections/birthlist.liquid)
+// ⚙️ הגדרות מעורך התמה של Shopify — sections/birthlist.liquid מזריק אותן בתגית JSON (#bl-settings).
+// בקובץ העצמאי אין תגית כזו → {} — הכלי עובד עם ברירות המחדל שבקוד. T(מפתח, ברירת מחדל) = טקסט מהעורך.
 const BL_SETTINGS = (() => { try { return JSON.parse(document.getElementById('bl-settings').textContent) || {}; } catch(e) { return {}; } })();
 Object.assign(CONFIG, BL_SETTINGS.config || {});
 const T = (k, d) => (BL_SETTINGS.text && BL_SETTINGS.text[k]) || d;
@@ -31,8 +32,6 @@ const BUY_MONTHS_BEFORE = {
 // חריגים לפריט בודד (לפי מספר הפריט) — גובר על הקטגוריה. למשל: {6: 2, 57: 0}
 const BUY_MONTHS_BEFORE_ITEM = { 1: 4, 12: 4, 74: 0 };
 
-// שמות תצוגה למותגים (בקובץ הנתונים המותג הוא מזהה מקוצר). מותג שלא כאן → לא מוצג.
-const BRAND_NAMES = {shilav:'שילב',minene:'מיננה',chicco:'Chicco',twigy:'Twigy',laura:'Laura',nino:'Nino',olimoli:'Olimoli',segal:'סגל בייבי',lorens:'Lorens',joie:'Joie',cybex:'Cybex',tal:'טל',suavinex:'Suavinex',nuna:'Nuna',avent:'Philips Avent',boobee:'Boobee',simplygood:'Simply Good',tinylove:'Tiny Love',biamba:'Biamba',drfischer:'ד"ר פישר',lume:'Lume',sportline:'Sportline',mommycare:'Mommy Care',graco:'Graco',lovi:'Lovi',mam:'MAM',moona:'Moona',babytech:'BabyTech',anex:'Anex',tommeetippee:'Tommee Tippee',aminach:'עמינח',medela:'Medela',infanti:'Infanti',britax:'Britax',bebejou:'Bébé-Jou',bugaboo:'Bugaboo',dainys:'Dainys',nuk:'NUK',mushie:'Mushie',kinderkraft:'Kinderkraft',lansinoh:'Lansinoh',flyontex:'Flyontex',babybjorn:'BabyBjörn',lamer:'לאמר',bibs:'BIBS',stokke:'Stokke',beurer:'Beurer',loopump:'Loopump',farmamedic:'פארמה מדיק',babytouch:'Baby Touch',brightstarts:'Bright Starts',pelicare:'Pelicare',taftoys:'Taf Toys',nuby:'Nuby',sweetie:'Sweetie',mustela:'Mustela',nuvita:'Nuvita',fehn:'Fehn',dillians:'Dillians',maxicosi:'Maxi-Cosi',huggies:'Huggies',litaf:'ליטף',frigg:'Frigg',babytrend:'Baby Trend',miyababy:'Miya Baby',weleda:'Weleda',hegen:'Hegen',babysafe:'BabySafe',winfun:'WinFun',nanit:'Nanit',mamaspapas:'Mamas & Papas',elysium:'Elysium',ergobaby:'Ergobaby',pampers:'Pampers',munchkin:'Munchkin',hape:'Hape',donebydeer:'Done by Deer',babyeinstein:'Baby Einstein',doona:'Doona',babymonsters:'Baby Monsters',nip:'NIP',beaba:'Béaba',battat:'Battat',infantino:'Infantino',fisherprice:'Fisher-Price',yookidoo:'Yookidoo',evenflo:'Evenflo',besafe:'BeSafe',babyjogger:'Baby Jogger',joolz:'Joolz',kidsconcept:'Kids Concept',minimonkey:'Minimonkey',babybrezza:'Baby Brezza',bopita:'Bopita',owlet:'Owlet',babyark:'Babyark','4moms':'4moms',inglesina:'Inglesina',uppababy:'UPPAbaby',polarb:'Polar B',nattou:'Nattou'};
 const STORE_COLORS = {shilav:'#5B8DEF',babystar:'#E27D60',motsesim:'#8E6BBF',agalease:'#4FA37A',minene:'#D48CB0',superpharm:'#3A9BC5'};
 const CAT_EMOJI = {'עגלה':'🛒','בטיחות':'🛡️','חדר שינה':'🛏️','פעילויות':'🧸','אמבטיה':'🛁','ביגוד':'👕','האכלה':'🍼','טיפול והגיינה':'🧴','לאם':'🤱'};
 // שתי קטגוריות קיבלו איור משלהן: עגלת תינוק (ולא עגלת סופר) ועריסה.
@@ -59,11 +58,14 @@ const TODAY = new Date();
 const daysAgo = iso => Math.floor((TODAY - new Date(iso)) / 864e5);
 const fmtChecked = iso => { const d = daysAgo(iso); return d <= 0 ? 'נבדק היום' : d === 1 ? 'נבדק אתמול' : `נבדק לפני ${d} ימים`; };
 const fmtDate = iso => new Date(iso).toLocaleDateString('he-IL', {day:'numeric', month:'numeric'});
-// שם המותג מגיע מהקובץ המפורסם (bl_data.brands — נבנה ב-build_bundle.py, שם גם מתקנים שמות).
-// הטבלה המקומית למעלה נשארת רק כרשת ביטחון לקובץ נתונים ישן שנשמר במטמון.
-const brandName = b => !b ? '' : ((DATA && DATA.brands && DATA.brands[b]) || (b.includes(':') ? '' : (BRAND_NAMES[b] || b)));
+// שם המותג מגיע מהקובץ המפורסם (bl_data.brands — נבנה ב-build_bundle.py מ-BRAND_DISPLAY, המקור היחיד).
+// מותג 'he:…'/'x:…' (מזהה גבולי) לא מוצג; מזהה שאין לו שם — מוצג כמו שהוא.
+const brandName = b => !b ? '' : ((DATA && DATA.brands && DATA.brands[b]) || (b.includes(':') ? '' : b));
 const ic = id => `<svg class="icon" aria-hidden="true"><use href="#${id}"/></svg>`;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// מיון עברי: Collator אחד לכל החיים של העמוד (48 §3.5) — localeCompare בונה אחד בכל השוואה
+const HE = new Intl.Collator('he');
+const heCmp = (a, b) => HE.compare(a, b);
 let toastT; function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
 const ls = {
   get(k){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch(e) { return null; } },
@@ -84,8 +86,8 @@ const safeHttpUrl = u => (typeof u === 'string' && /^https?:\/\/\S+$/i.test(u.tr
    ===================================================================== */
 // כל בקשה לכתובת הזו מועברת (חתומה) לווקר של שלב G — קבוע טכני, לא בהגדרות.
 const APP_PROXY_BASE = '/apps/birthlist/';
+const KEY_DRAFT = 'bl_draft';   // הטיוטה שמחכה להרשמה — באחסון המקומי
 const Identity = (() => {
-  const KEY_DRAFT = 'bl_draft';
   const AUTH_MARK = 'blauth';   // סימון שאנחנו שמים בכתובת החזרה, כדי לזהות "רגע אחרי התחברות"
   let cachedUser; // undefined = עוד לא נבדק בטעינה הזו
 
@@ -98,14 +100,13 @@ const Identity = (() => {
   }
 
   return {
-    mode: 'live',
     async current(){
       if (cachedUser === undefined) cachedUser = await whoami();
       return cachedUser;
     },
     // יציאה להרשמה/התחברות של שופיפיי. draft = כל מה שמולא עד עכשיו — חייב לשרוד את היציאה מהעמוד.
     // נשמר בשני מקומות: באחסון המקומי, וגם מקודד בכתובת שאליה שופיפיי תחזיר אותנו.
-    signIn(provider, draft){
+    signIn(draft){
       ls.set(KEY_DRAFT, draft);
       const back = new URL(location.href);
       back.searchParams.set(AUTH_MARK, '1');
@@ -191,7 +192,19 @@ let DATA = null, VERSION = null, STORES = {}, ITEMS = [], MODELS = [], CATS = []
 let modelsByItem = {}, modelById = {}, itemById = {}, hiddenByItem = {};
 let OVERRIDES = { v:1, models:{} }, IS_ADMIN = false, RAW_MODELS = null, RAW_IDS = new Set();
 
+// תיקוני המנהל (של דניאל) — אם אינם זמינים, הכלי עובד רגיל עם הקובץ כמו שהוא. לעולם לא זורק.
+async function fetchOverrides(){
+  try {
+    const r = await fetch(APP_PROXY_BASE + 'overrides', {credentials:'same-origin', cache:'no-store'});
+    const d = await r.json();
+    if (d && d.ok && d.overrides && typeof d.overrides === 'object' && !Array.isArray(d.overrides)) return Object.assign({v:1, models:{}}, d.overrides);
+  } catch(e) {}
+  return null;
+}
+// שלב 6ב (48 §3.5): שלוש השרשראות רצות במקביל — [גרסה→נתונים] ‖ [תיקוני המנהל] ‖ [מי מחובר/ת→הרשימה] —
+// במקום חמש-שש פניות בטור לפני הציור הראשון. הסדר גרסה→נתונים (מסמך 23 פרק 2) נשמר בתוך השרשרת שלו.
 async function loadData(){
+  const ovP = fetchOverrides();
   const ver = await fetch(CONFIG.DATA_BASE + 'bl_version.json?t=' + Date.now(), {cache:'no-store'}).then(r => { if (!r.ok) throw new Error('version ' + r.status); return r.json(); });
   const data = await fetch(CONFIG.DATA_BASE + 'bl_data.json?v=' + ver.v).then(r => { if (!r.ok) throw new Error('data ' + r.status); return r.json(); });
   if (!data.items || !data.models || !data.stores) throw new Error('bad data');
@@ -204,12 +217,7 @@ async function loadData(){
     if (src.scanned) st.d = src.scanned;
     if (src.products) st.p = src.products;
   }
-  // תיקוני המנהל (של דניאל) — אם אינם זמינים, הכלי עובד רגיל עם הקובץ כמו שהוא
-  try {
-    const r = await fetch(APP_PROXY_BASE + 'overrides', {credentials:'same-origin', cache:'no-store'});
-    const d = await r.json();
-    if (d && d.ok && d.overrides && typeof d.overrides === 'object' && !Array.isArray(d.overrides)) OVERRIDES = Object.assign({v:1, models:{}}, d.overrides);
-  } catch(e) {}
+  const ov = await ovP; if (ov) OVERRIDES = ov;
   prepareData();
 }
 /* ---------- עריכות המנהל על מבנה הרשימה (קרן) ----------
@@ -297,8 +305,8 @@ function prepareData(){
   for (const [from, to] of Object.entries((DATA && DATA.alias) || {})) if (!RAW_IDS.has(from) && modelById[to]) modelById[from] = modelById[to];
   applyMergesLive();      // איחודים שהמנהל עשה היום — לראות מיד, לא רק אחרי העדכון הלילי
   applyManualLive();      // חנות שנוספה להשוואה עם מחיר ידני — אותו דבר
-  for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
-  for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || a.n.localeCompare(b.n, 'he'));
+  for (const list of Object.values(modelsByItem)) list.sort((a, b) => a.min - b.min || heCmp(a.n, b.n));
+  for (const list of Object.values(hiddenByItem)) list.sort((a, b) => a.min - b.min || heCmp(a.n, b.n));
 }
 
 /* אותם כללים כמו apply_merges במנוע: המזהה הראשון בקבוצה שורד, הנבלעת מוסיפה לו
@@ -514,7 +522,7 @@ async function deleteMyList(){
   const res = await Identity.deleteList();
   if (!(res && res.ok)) { toast('המחיקה נכשלה — לנסות שוב' + ((res && res.err) ? ' (' + res.err + ')' : '')); return false; }
   S = EMPTY(); LIST_REV = null; LIST_DIRTY = false; LAST_LIST_ERR = ''; GIFT_LINK_TOKEN = null; GIFT_CLAIMS_CACHE = {}; GIFT_CLAIMS_AT = 0;
-  ls.del('bl_draft'); showSaveBar(false);
+  ls.del(KEY_DRAFT); showSaveBar(false);
   OB.step = 0; OB.due = null; OB.twins = false; OB.first = true;
   renderOnboard(); toast('הרשימה נמחקה');
   return true;
@@ -524,7 +532,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // מיישר רשימה מכל גרסה לצורה הנוכחית
 function normalize(st){
   const out = EMPTY(); if (!st) return out;
-  out.profile = st.profile || null; out.open = st.open ?? null; out.have = {...(st.have || {}), ...(st.skip || {})};
+  out.profile = st.profile || null; out.open = st.open ?? null; out.have = {...(st.have || {})};
   out.tour = st.tour ? 1 : 0;                       // 1 = ההדרכה כבר הוצגה לחשבון הזה
   out.custom = (Array.isArray(st.custom) ? st.custom : []).map(c => (c && c.url && !safeHttpUrl(c.url)) ? {...c, url:''} : c);
   for (const [k, v] of Object.entries(st.sel || {})) { const arr = Array.isArray(v) ? v : (v ? [v] : []); out.sel[k] = arr.map(p => ({id: p.id || uid(), who: p.who || 'me', ...p})); if (!out.sel[k].length) delete out.sel[k]; }
@@ -612,11 +620,11 @@ function renderOnboard(){
     const editing = !!S.profile;
     S.profile = { ...(S.profile || {}), due: OB.due, twins: OB.twins, first: OB.first };   // מיזוג — giftSalt (קישורי המתנות) נשאר (ביקורת 24.9, 3.1ג)
     if (editing) { save(); enterApp(); toast('הפרטים עודכנו'); return; }
-    ls.set('bl_draft', S);           // הטיוטה נשמרת כבר עכשיו — עוד לפני ההרשמה
+    ls.set(KEY_DRAFT, S);            // הטיוטה נשמרת כבר עכשיו — עוד לפני ההרשמה
     // דניאל, 15.9: בלי מסך ביניים — הכפתור מוביל ישר להתחברות של שופיפיי
     // (הבחירה Google/Shop/מייל קורית שם, פעם אחת), ובחזרה — אוטומטית לרשימה.
     if (USER) { save(); renderBuild(); return; }
-    Identity.signIn('direct', S);
+    Identity.signIn(S);
   };
 }
 function editProfile(){ const p = S.profile || {}; OB.step = 1; OB.due = p.due || null; OB.twins = !!p.twins; OB.first = p.first !== false; renderOnboard(); }
@@ -656,7 +664,7 @@ function renderSignIn(){
     <div class="nav" style="justify-content:center"><button type="button" class="btn primary big" id="btnAuth">${T("signin_btn", "להרשמה / התחברות")}</button></div>
     <p class="tiny">${T("signin_tiny", "בלי סיסמאות. הפרטים לא נמסרים לאף חנות.")}</p>
   </div>`;
-  $('#btnAuth', el).onclick = () => Identity.signIn('direct', S);
+  $('#btnAuth', el).onclick = () => Identity.signIn(S);
 }
 
 /* =====================================================================
@@ -691,13 +699,15 @@ function fixCustomCats(){
    הקישור מוביל לכלי עצמו, לא לרשימה האישית — ולכן אפשר לשלוח אותו לכל אחת.
    אותה בנייה כמו קישור המתנות: בתצוגה מקדימה של עותק תמה, הקישור פותח את אותו עותק. */
 const REFER_WA_TEXT = T('refer_wa', 'מצאתי כלי שמתכנן את כל הקניות ללידה — רשימה מלאה, מחירים מכל החנויות, והכי זול מסומן. בחינם:');
-function toolLink(){
-  const url = new URL(location.pathname, CONFIG.STORE_HOME);
+// בתצוגה מקדימה של עותק תמה — שכל קישור שיוצא מהכלי יפתח את אותו עותק.
+// שופיפיי מוחקת את preview_theme_id מהכתובת אחרי הטעינה, לכן קוראים מ-Shopify.theme ולא רק מהכתובת.
+function withPreviewTheme(url){
   const th = (typeof Shopify !== 'undefined' && Shopify.theme) ? Shopify.theme : null;
   const pt = new URL(location.href).searchParams.get('preview_theme_id') || (th && th.role && th.role !== 'main' && th.id ? String(th.id) : null);
   if (pt) url.searchParams.set('preview_theme_id', pt);
   return url.toString();
 }
+function toolLink(){ return withPreviewTheme(new URL(location.pathname, CONFIG.STORE_HOME)); }
 function renderRefer(){
   const el = $('#refer'); if (!el) return;
   const link = toolLink();
@@ -780,7 +790,6 @@ function lines(st = S){
   return out;
 }
 const total = ls => ls.reduce((a, l) => a + l.price * l.qty, 0);
-const mine = ls => ls.filter(l => l.who === 'me');
 /* כמה יחידות באמת נשאר לקנות (הכרעת דניאל, 20.9):
    • "אני קונה"      — הכל.
    • "לבקש במתנה"    — נשאר בתקציב עד שנותן/ת תופס/ת. כל יחידה שנתפסה יורדת בנפרד:
@@ -846,27 +855,34 @@ function renderList(){
 }
 // תמונה: אייקון ברירת-מחדל תמיד מאחור; תמונה שנשברת נעלמת ומשאירה אותו
 const hiRes = u => u.replace(/([?&])width=200\b/, '$1width=400');
+// הכרטיסים בגלריה רחבים ~160px: במסך רגיל מספיקה תמונת 200px, במסך רטינה הדפדפן לוקח את ה-400 (srcset) — 48 §3.5.
+// חלון המוצר (lg) מציג את התמונה גדולה — שם תמיד 400.
 function thumb(img, cls='', big=false){
-  const src = CONFIG.SHOW_IMAGES && img ? (big ? hiRes(img) : img) : '';
-  return `<span class="${cls.includes('pic') ? cls : 'thumb ' + cls}">${ic('i-bottle')}${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+  const src = CONFIG.SHOW_IMAGES && img ? (big && !cls.includes('pic') ? hiRes(img) : img) : '';
+  const set = src && big && cls.includes('pic') && hiRes(img) !== img ? ` srcset="${esc(img)} 200w, ${esc(hiRes(img))} 400w" sizes="(min-width:900px) 200px, (min-width:560px) 30vw, 45vw"` : '';
+  return `<span class="${cls.includes('pic') ? cls : 'thumb ' + cls}">${ic('i-bottle')}${src ? `<img src="${esc(src)}"${set} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
 }
+// שורת ההסבר מעל רשימת החנויות של מוצר (חלון המוצר וגם חלון האורח/ת)
+function storesNotice(n, allSame){ return n > 1 ? (allSame ? `<p class="notice" style="margin:0 0 12px">אותו מחיר ב-${n} החנויות.</p>` : `<p class="notice info" style="margin:0 0 12px">נמכר ב-${n} חנויות — המחיר הזול ביותר מסומן.</p>`) : `<p class="notice" style="margin:0 0 12px">נמצא בחנות אחת בלבד, אין השוואה.</p>`; }
 function priceLabel(o){ return (o.px && o.px > o.p ? 'מ-' : '') + nis(o.p); }   // טווח בתוך חנות → "מ-11.90 ₪"
 function modelPriceLabel(m){ const range = (m.nStores > 1 && m.maxP > m.min) || (m.best.px && m.best.px > m.best.p); return (range ? 'מ-' : '') + nis(m.min); }
 function storeChip(sid){ const s = STORES[sid]; return s ? `<span class="storechip"><i style="background:${STORE_COLORS[sid]||'var(--muted)'}">${esc(s.n[0])}</i>${esc(s.n)}</span>` : ''; }
 function whoRow(key, who){ return `<div class="who" role="group" aria-label="מי קונה">${Object.entries(WHO).map(([k, t]) => `<button type="button" data-who="${k}" data-key="${esc(key)}" aria-pressed="${who===k}">${t}</button>`).join('')}</div>`; }
 
+function qtyCtl(key, q){ return `<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>`; }
+function removeBtn(key){ return `<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button>`; }
 function renderPick(it, p){
   const m = modelById[p.m], o = m && m.offers.find(x => x.sid === p.s), q = p.q || 1, key = 'p' + p.id;
-  if (!m || !o) return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(p.name || 'המוצר שנבחר')}</b><span class="v">המוצר הזה כבר לא זמין בחנויות שאנחנו בודקים</span></span></div><div class="row"><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div></div>`;
+  if (!m || !o) return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(p.name || 'המוצר שנבחר')}</b><span class="v">המוצר הזה כבר לא זמין בחנויות שאנחנו בודקים</span></span></div><div class="row">${removeBtn(key)}</div></div>`;
   const my = p.pp != null, unit = my ? +p.pp : o.p, bought = !!p.b;
   return `<div class="pick ${bought ? 'bought' : ''}" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}${my ? ` · <b style="color:var(--sage)">המחיר שלי</b> · בחנות: ${nis(o.p)}` : ''}</span>${boughtTag(p)}</span><span class="price num">${q > 1 ? nis(unit * q) : (my ? nis(unit) : priceLabel(o))}<button type="button" class="pedit" data-act="price" data-key="${key}" title="יש לי הנחה — לעדכן מחיר" aria-label="עריכת מחיר">✎</button></span></div>
-    <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>${boughtBtn(key, bought)}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
+    <div class="row">${storeChip(o.sid)}${qtyCtl(key, q)}${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>${boughtBtn(key, bought)}${removeBtn(key)}</div>
     ${giftBadge(key, q, true)}${whoRow(key, p.who || 'me')}</div>`;
 }
 function renderCustomPick(c){
   const key = 'c' + c.id, q = c.q || 1, bought = !!c.b;
   return `<div class="pick ${bought ? 'bought' : ''}" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span>${boughtTag(c)}</span><span class="price num">${nis((+c.price || 0) * q)}<button type="button" class="pedit" data-act="price" data-key="${key}" title="עריכת מחיר" aria-label="עריכת מחיר">✎</button></span></div>
-    <div class="row"><span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>` : ''}${boughtBtn(key, bought)}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
+    <div class="row">${qtyCtl(key, q)}${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>` : ''}${boughtBtn(key, bought)}${removeBtn(key)}</div>
     ${giftBadge(key, q, true)}${whoRow(key, c.who || 'me')}</div>`;
 }
 // "קניתי ✓" (שלב 6): התג בכותרת המוצר, והכפתור שמסמן/מבטל. b = תאריך הקנייה (YYYY-MM-DD).
@@ -969,7 +985,7 @@ function renderModels(){
   $('#msBrands').innerHTML = brands.length > 1 ? `<button type="button" class="chip" data-b="all" aria-pressed="${MS.brand==='all'}">כל המותגים<span class="n num">${all.length}</span></button>` + brands.map(([v, n]) => `<button type="button" class="chip" data-b="${esc(v)}" aria-pressed="${MS.brand===v}">${esc(v)}<span class="n num">${n}</span></button>`).join('') : '';
   $$('#msBrands .chip').forEach(b => b.onclick = () => { MS.brand = b.dataset.b; MS.page = 1; renderModels(); });
   const ms = all.filter(m => (MS.brand === 'all' || m.brand === MS.brand) && (!MS.q || (m.n + ' ' + m.brand).toLowerCase().includes(MS.q)));
-  const sorters = { cheap: (a, b) => a.min - b.min, exp: (a, b) => b.min - a.min, brand: (a, b) => (a.brand || 'ת').localeCompare(b.brand || 'ת', 'he') || a.min - b.min, stores: (a, b) => b.nStores - a.nStores || a.min - b.min };
+  const sorters = { cheap: (a, b) => a.min - b.min, exp: (a, b) => b.min - a.min, brand: (a, b) => heCmp(a.brand || 'ת', b.brand || 'ת') || a.min - b.min, stores: (a, b) => b.nStores - a.nStores || a.min - b.min };
   ms.sort(sorters[MS.sort]);
   const multi = all.filter(m => m.nStores > 1).length;
   $('#msSub').textContent = `${ms.length} מוצרים${brands.length > 1 ? ` · ${Object.keys(byB).length} מותגים` : ''}${multi ? ` · ${multi} בכמה חנויות` : ''}`;
@@ -1072,7 +1088,7 @@ function openModel(mid){
       <div class="acts"><button type="button" class="btn primary small" data-add="${esc(o.sid)}">${chosen ? 'להוסיף שוב' : 'הוספה לרשימה'}</button><a class="btn soft small" href="${esc(o.u)}" target="_blank" rel="noopener">לדף המוצר</a></div></div>`; }).join('');
   openSheet(`<div class="head"><div><h2 style="font-size:18px">${esc(m.n)}</h2><div class="sub">${m.brand ? esc(m.brand) + ' · ' : ''}${esc(it.n)}</div></div><button type="button" class="btn soft small" data-back>${(modelsByItem[it.id].length > 1) ? ic('i-back') + ' למוצרים' : 'סגירה'}</button></div>
     <div class="body">${thumb(m.img, 'lg', true)}${m.cl?.length ? `<div class="colors">${m.cl.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
-    ${many ? (allSame ? `<p class="notice" style="margin:0 0 12px">אותו מחיר ב-${m.offers.length} החנויות.</p>` : `<p class="notice info" style="margin:0 0 12px">נמכר ב-${m.offers.length} חנויות — המחיר הזול ביותר מסומן.</p>`) : `<p class="notice" style="margin:0 0 12px">נמצא בחנות אחת בלבד, אין השוואה.</p>`}${body}${adminBox(m)}</div>`);
+    ${storesNotice(m.offers.length, allSame)}${body}${adminBox(m)}</div>`);
   $('[data-back]', $('#sheet')).onclick = () => (modelsByItem[it.id].length > 1) ? openModels(it.id, true) : closeSheet();
   $$('[data-add]', $('#sheet')).forEach(b => b.onclick = () => {
     const o = m.offers.find(x => x.sid === b.dataset.add);
@@ -1124,7 +1140,7 @@ function adminRemovedList(onlyItem){
     if (onlyItem && +iid !== +onlyItem) continue;
     if (list.length) groups[iid] = list;
   }
-  const ids = Object.keys(groups).sort((a, b) => ((itemById[a] || {}).n || '').localeCompare(((itemById[b] || {}).n || ''), 'he'));
+  const ids = Object.keys(groups).sort((a, b) => heCmp((itemById[a] || {}).n || '', (itemById[b] || {}).n || ''));
   const total = ids.reduce((n, iid) => n + groups[iid].length, 0);
   const body = ids.map(iid => `<div class="ttl" style="margin-top:14px">${esc((itemById[iid] || {}).n || ('פריט ' + iid))}</div>` +
     groups[iid].map(m => `<div class="adm-store" style="flex-wrap:wrap"><div style="flex:1;min-width:0">
@@ -1720,7 +1736,7 @@ function adminCompareNew(m, url){
     const price = parseFloat($('#admNewPrice').value);
     if (!(price > 0)) { $('#admNewPrice').focus(); return toast('צריך מחיר'); }
     if (m.offers.some(o => o.sid === sid)) return toast(`${STORES[sid].n} כבר מופיעה במוצר הזה`);
-    const k = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const k = 'x' + uid();
     const e = { item: m.i, url, price, attach: m.id, added: new Date().toISOString().slice(0, 10) };
     const nm = $('#admNewName').value.trim(); if (nm) e.name = nm;
     (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
@@ -1815,7 +1831,7 @@ function adminManualProducts(){
   $('#amAdd').onclick = async () => {
     const url = urlBox.value.trim();
     if (!manualStoreOf(url)) { toast('צריך קישור לדף מוצר מאחת משש החנויות'); urlBox.focus(); return; }
-    const k = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const k = 'x' + uid();
     const e = {item: +$('#amItem').value, url, added: new Date().toISOString().slice(0, 10)};
     const note = $('#amNote').value.trim(); if (note) e.note = note;
     (OVERRIDES.manual = OVERRIDES.manual || {})[k] = e;
@@ -2085,14 +2101,10 @@ async function ensureGiftLink(){
   GIFT_LINK_TOKEN = await fetchGiftLink(false);
   return GIFT_LINK_TOKEN;
 }
-// בניית כתובת השיתוף. בזמן בדיקה על עותק תמה — שהקישור יפתח את אותו עותק.
-// שופיפיי מוחקת את preview_theme_id מהכתובת אחרי הטעינה, לכן קוראים מ-Shopify.theme ולא מהכתובת.
+// כתובת השיתוף של המתנות — אותו בסיס כמו קישור הכלי (withPreviewTheme), עם הטוקן.
 function giftShareLink(token){
   const url = new URL(location.pathname, CONFIG.STORE_HOME); url.searchParams.set('gift', token);
-  const th = (typeof Shopify !== 'undefined' && Shopify.theme) ? Shopify.theme : null;
-  const pt = new URL(location.href).searchParams.get('preview_theme_id') || (th && th.role && th.role !== 'main' && th.id ? String(th.id) : null);
-  if (pt) url.searchParams.set('preview_theme_id', pt);
-  return url.toString();
+  return withPreviewTheme(url);
 }
 async function openGiftLinkModal(){
   openModal(`<h2>קישור לתפיסת מתנות</h2><p class="lead">כל מי שמקבל את הקישור יכול לתפוס מתנה — בלי חשבון. מי שתפס משהו, זה יסומן כ"מכוסה" ברשימה שלכם.</p><p class="why">טוענים קישור…</p>`);
@@ -2182,7 +2194,7 @@ function openStoresModal(g){
   openModal(`<h2 style="font-size:20px">${esc(g.name)}</h2>
     <p class="why" style="margin:0 0 12px">${m.brand ? esc(m.brand) + (g.item ? ' · ' : '') : ''}${g.item ? esc(g.item.n) : ''}</p>
     ${thumb(m.img, 'lg', true)}
-    ${many ? (allSame ? `<p class="notice" style="margin:0 0 12px">אותו מחיר ב-${offers.length} החנויות.</p>` : `<p class="notice info" style="margin:0 0 12px">נמכר ב-${offers.length} חנויות — הזול ביותר מסומן.</p>`) : `<p class="notice" style="margin:0 0 12px">נמצא בחנות אחת.</p>`}
+    ${storesNotice(offers.length, allSame)}
     ${offers.map(o => `<div class="store ${many && !allSame && o.p === min ? 'best' : ''}">
       <div class="l1"><span class="sc">${storeChip(o.sid)}${many && !allSame && o.p === min ? '<span class="tag best">הכי זול</span>' : ''}${o.sid === g.sid ? '<span class="tag early">הבחירה של האמא</span>' : ''}</span><span class="p num">${priceLabel(o)}</span></div>
       ${!o.a || (o.px && o.px > o.p) ? `<div class="meta">${!o.a ? '<span class="unavail">לא מסומן במלאי — לבדוק בחנות</span>' : ''}${o.px && o.px > o.p ? `<span>טווח: ${nis(o.p)}–${nis(o.px)} לפי גודל/גרסה</span>` : ''}</div>` : ''}
@@ -2253,28 +2265,37 @@ function openDeleteList(){
    הפעלה
    ===================================================================== */
 function showLoadError(title, msg){ $('#errTitle').textContent = title; $('#errMsg').textContent = msg; showScreen('screen-error'); }
+// החשבון והרשימה — נמשכים במקביל לנתונים (שלב 6ב). כישלון בטעינת הרשימה נשמר (listErr) ומטופל
+// ב-bootAccount בדיוק כמו קודם: מסך שגיאה עם "לנסות שוב", לא הרשמה (48 §3.1א). לעולם לא זורק.
+async function prefetchAccount(){
+  const user = await Identity.current();
+  if (!user) return {user:null};
+  try { return {user, got: await Identity.loadList()}; }
+  catch (e) { return {user, listErr: e}; }
+}
 async function boot(){
   showScreen('screen-loading');
+  // עמוד מתנות לאורח/ת — קישור עם ?gift=<טוקן>, בלי חשבון ובלי מסך הרשמה כלל (ואין מה לשאול "מי מחובר/ת").
+  const giftToken = new URL(location.href).searchParams.get('gift');
+  const account = giftToken ? null : prefetchAccount();
   try { await loadData(); }
   catch (e) { showLoadError('לא הצלחנו לטעון את המחירים', 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'); return; }
-  // עמוד מתנות לאורח/ת — קישור עם ?gift=<טוקן>, בלי חשבון ובלי מסך הרשמה כלל.
-  const giftToken = new URL(location.href).searchParams.get('gift');
   if (giftToken) { $('#btnRetry').onclick = () => bootGiftView(giftToken); bootGiftView(giftToken); return; }
   // כל תקלה לא צפויה מכאן והלאה → מסך שגיאה עם "לנסות שוב", ולא גלגל טעינה לנצח (ביקורת 24.9, 3.1ב)
-  try { await bootAccount(); }
+  try { await bootAccount(await account); }
   catch (e) { console.error('[birthlist] boot failed:', e); showLoadError('משהו השתבש בטעינה', 'כדאי לנסות שוב. (' + ((e && e.message) || e) + ')'); }
 }
-async function bootAccount(){
+async function bootAccount(acc){
   const draftBack = Identity.completeSignIn();    // האם חזרנו מהתחברות (יש טיוטה מקודדת בכתובת)?
-  USER = await Identity.current();                // מי מחובר/ת עכשיו, לפי שופיפיי
+  USER = acc.user;                                // מי מחובר/ת עכשיו, לפי שופיפיי (נמשך במקביל לנתונים)
   IS_ADMIN = !!(USER && USER.admin);
   // הרשימה השמורה: רק טעינה שהצליחה פותחת את השמירה (LIST_LOADED). כישלון → מסך שגיאה עם
   // "לנסות שוב" — לא מסך הרשמה (שהיה מסתיים בדריסת הרשימה השמורה ברשימה ריקה). ביקורת 24.9, 3.1א.
   LIST_LOADED = false;
   let saved = null;
   if (USER) {
-    try { const got = await Identity.loadList(); saved = got.list; LIST_REV = got.rev; LIST_LOADED = true; }
-    catch (e) { showLoadError('לא הצלחנו לטעון את הרשימה שלך', 'הרשימה שמורה בחשבון — רק לא הצלחנו להביא אותה עכשיו. כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'); return; }
+    if (acc.listErr) { showLoadError('לא הצלחנו לטעון את הרשימה שלך', 'הרשימה שמורה בחשבון — רק לא הצלחנו להביא אותה עכשיו. כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + acc.listErr.message + ')'); return; }
+    saved = acc.got.list; LIST_REV = acc.got.rev; LIST_LOADED = true;
   }
   if (draftBack) {
     if (USER) {
@@ -2292,7 +2313,7 @@ async function bootAccount(){
     if (!S.profile) { renderOnboard(); return; }
     enterApp(); return;
   }
-  const draft = ls.get('bl_draft');
+  const draft = ls.get(KEY_DRAFT);
   if (draft?.profile) { S = normalize(draft); renderSignIn(); return; }
   S = EMPTY(); OB.step = 0; renderOnboard();
 }
