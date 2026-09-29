@@ -140,13 +140,14 @@ const Identity = (() => {
     // כל דבר אחר — שגיאת שרת, תשובה שאינה JSON, אין רשת — הוא חריגה, ולא "אין רשימה":
     // "אין רשימה" מובילה להרשמה, וההרשמה שומרת רשימה חדשה שדורסת את הרשימה האמיתית
     // (ביקורת 24.9, 3.1א). כישלון חולף מקבל שלושה ניסיונות לפני שמתייאשים.
+    // מחזיר {list, rev}: rev = הגרסה (updatedAt) של הרשימה בשרת — נשלחת חזרה בכל שמירה (שלב 6).
     async loadList(tries = 3){
       let err = '';
       for (let i = 0; i < tries; i++) {
         try {
           const r = await fetch(APP_PROXY_BASE + 'list', {credentials:'same-origin', cache:'no-store'});
           let d = null; try { d = await r.json(); } catch(e) {}
-          if (d && d.ok) return (d.list && typeof d.list === 'object') ? d.list : null;
+          if (d && d.ok) return { list: (d.list && typeof d.list === 'object') ? d.list : null, rev: (d.list && d.updatedAt) || null };
           err = 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '');
         } catch(e) { err = 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : ''); }
         if (i < tries - 1) await new Promise(ok => setTimeout(ok, 600 * (i + 1)));
@@ -155,16 +156,28 @@ const Identity = (() => {
     },
     // שמירה: מחזירה {ok, err} במקום לבלוע כישלון בשקט (ביקורת 24.9, H2).
     // keepalive — לשמירה האחרונה כשהעמוד נסגר: הדפדפן מסיים אותה גם אחרי היציאה.
+    // שלב 6 (48 §3.3ה): הגוף הוא {list, rev}. rev שכבר לא תואם לשרת (מכשיר/טאב אחר שמר בינתיים)
+    // → {ok:false, conflict:true, list, rev} עם הרשימה העדכנית — הממשק מציג אותה ולא דורס.
     async saveList(_uid, list, opts = {}){
-      const init = {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify(list)};
+      const init = {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({ list, rev: opts.rev == null ? null : String(opts.rev) })};
       if (opts.keepalive) init.keepalive = true;
       try {
         let r;
         try { r = await fetch(APP_PROXY_BASE + 'list', init); }
         catch(e) { if (!init.keepalive) throw e; delete init.keepalive; r = await fetch(APP_PROXY_BASE + 'list', init); } // keepalive מוגבל ל-64KB — נופלים חזרה לשמירה רגילה
         let d = null; try { d = await r.json(); } catch(e) {}
-        if (d && d.ok) return {ok:true};
+        if (d && d.ok) return {ok:true, rev: d.updatedAt || null};
+        if (d && d.error === 'conflict') return {ok:false, conflict:true, list: (d.list && typeof d.list === 'object') ? d.list : null, rev: (d.list && d.updatedAt) || null, err: 'הרשימה עודכנה ממכשיר אחר'};
         if (d && d.error === 'too_large') return {ok:false, err: 'הרשימה גדולה מדי לשמירה (מעל ' + Math.round((+d.max || 0) / 1024) + 'KB) — כדאי להסיר מוצרים שכבר לא צריך'};
+        return {ok:false, err: 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '')};
+      } catch(e) { return {ok:false, err: 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : '')}; }
+    },
+    // מחיקת הרשימה (שלב 6, החלטת דניאל 29.9): הרשימה, הפרופיל ותפיסות המתנות — החשבון בחנות נשאר.
+    async deleteList(){
+      try {
+        const r = await fetch(APP_PROXY_BASE + 'delete-list', {method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body: JSON.stringify({confirm:true})});
+        let d = null; try { d = await r.json(); } catch(e) {}
+        if (d && d.ok) return {ok:true};
         return {ok:false, err: 'שגיאה ' + r.status + (d && d.error ? ' · ' + d.error : '')};
       } catch(e) { return {ok:false, err: 'אין חיבור לשרת' + (e && e.message ? ' · ' + e.message : '')}; }
     },
@@ -446,22 +459,41 @@ let saveT;
       דורסת את הרשימה השמורה ברשימה ריקה.
    2. שמירה אחת בכל רגע, והבאה מחכה לה — כדי שגוף ישן לא יגיע לשרת אחרי חדש.
    3. כישלון לא נבלע: פס "לא נשמר" עם "לנסות שוב" נשאר עד שהשמירה הבאה מצליחה.
-   4. בסגירת העמוד — שמירה עם keepalive, שהדפדפן מסיים גם אחרי היציאה.                */
-let LIST_LOADED = false, LIST_DIRTY = false, LIST_SAVING = false, LAST_LIST_ERR = '';
+   4. בסגירת העמוד — שמירה עם keepalive, שהדפדפן מסיים גם אחרי היציאה.
+   5. (שלב 6, 48 §3.3ה) כל שמירה נושאת את הגרסה שהממשק מכיר (LIST_REV). אם מכשיר/טאב אחר שמר
+      בינתיים — השרת מסרב (conflict) ומחזיר את הרשימה העדכנית: מציגים אותה, והשינוי המקומי
+      האחרון לא נכתב מעליה בשקט. "האחרון דורס" הפך ל"הראשון נשמר, השני רואה".                    */
+let LIST_LOADED = false, LIST_DIRTY = false, LIST_SAVING = false, LAST_LIST_ERR = '', LIST_REV = null;
+let SAVE_INFLIGHT = null;   // ה-Promise של השמירה שבדרך — מי שצריך את השרת "שקט" מחכה לו (flushSaveNow)
 const canSave = () => !!USER && LIST_LOADED;
 function save(){ if (!canSave()) return; LIST_DIRTY = true; clearTimeout(saveT); saveT = setTimeout(flushSave, 150); }
 function flushSave(){
   clearTimeout(saveT); saveT = null;
-  if (!canSave() || !LIST_DIRTY || LIST_SAVING) return;
+  if (!canSave() || !LIST_DIRTY || LIST_SAVING) return SAVE_INFLIGHT || Promise.resolve();
   LIST_SAVING = true; LIST_DIRTY = false;
-  Identity.saveList(USER.id, S).then(res => {
-    LIST_SAVING = false;
-    if (res && res.ok) { LAST_LIST_ERR = ''; showSaveBar(false); if (LIST_DIRTY) flushSave(); return; }
+  SAVE_INFLIGHT = Identity.saveList(USER.id, S, {rev: LIST_REV}).then(res => {
+    LIST_SAVING = false; SAVE_INFLIGHT = null;
+    if (res && res.ok) { if (res.rev) LIST_REV = res.rev; LAST_LIST_ERR = ''; showSaveBar(false); if (LIST_DIRTY) flushSave(); return; }
+    if (res && res.conflict) { applyServerList(res.list, res.rev); return; }
     LIST_DIRTY = true; LAST_LIST_ERR = (res && res.err) || '';
     console.warn('[birthlist] list save failed:', LAST_LIST_ERR);
     if ($('#saveBar').hidden) toast('השמירה נכשלה — השינויים האחרונים לא נשמרו');
     showSaveBar(true);
   });
+  return SAVE_INFLIGHT;
+}
+// שמירה מיידית של מה שממתין, וחכייה עד שהשרת שקט — לפני פעולות שקוראות/כותבות את הרשימה בשרת
+// (קישור המתנות, מחיקת הרשימה), כדי ששמירה מושהית לא תתנגש איתן.
+async function flushSaveNow(){
+  if (saveT) { clearTimeout(saveT); saveT = null; }
+  for (let i = 0; i < 40 && (LIST_SAVING || (LIST_DIRTY && canSave())); i++) { await (flushSave() || Promise.resolve()); if (LIST_SAVING) await new Promise(ok => setTimeout(ok, 100)); }
+}
+// הרשימה כפי שהיא בשרת (אחרי conflict): מחליפה את המקומית, ומיידעת. הגרסה מתעדכנת כדי שהשמירה הבאה תעבור.
+function applyServerList(list, rev){
+  LIST_DIRTY = false; LAST_LIST_ERR = ''; LIST_REV = rev || null;
+  if (list) { S = normalize(list); GIFT_LINK_TOKEN = null; if (!$('#app').hidden) { fixCustomCats(); followAliases(); renderAll(); } }
+  showSaveBar(false);
+  toast('הרשימה עודכנה ממכשיר אחר — מוצגת הגרסה העדכנית');
 }
 function showSaveBar(on){ const b = $('#saveBar'); b.hidden = !on; if (on) $('#saveBarMsg').textContent = 'השינויים האחרונים לא נשמרו' + (LAST_LIST_ERR ? ' (' + LAST_LIST_ERR + ')' : ''); }
 $('#saveBarRetry').onclick = () => { if (!canSave()) return; LIST_DIRTY = true; flushSave(); };
@@ -470,7 +502,22 @@ function saveOnLeave(){
   if (!canSave() || !(LIST_DIRTY || saveT)) return;
   clearTimeout(saveT); saveT = null; LIST_DIRTY = false;
   // אם בכל זאת נכשל (והעמוד עדיין חי, למשל חזרה מאפליקציה אחרת) — הפס יופיע והשינוי יישמר בניסיון הבא
-  Identity.saveList(USER.id, S, {keepalive:true}).then(res => { if (!(res && res.ok)) { LIST_DIRTY = true; LAST_LIST_ERR = (res && res.err) || ''; showSaveBar(true); } });
+  Identity.saveList(USER.id, S, {keepalive:true, rev: LIST_REV}).then(res => { if (res && res.ok) { if (res.rev) LIST_REV = res.rev; return; } if (res && res.conflict) { applyServerList(res.list, res.rev); return; } LIST_DIRTY = true; LAST_LIST_ERR = (res && res.err) || ''; showSaveBar(true); });
+}
+// מחיקת הרשימה (שלב 6, החלטת דניאל 29.9): הרשימה, התאריך ותפיסות המתנות נמחקות מהשרת; קישור
+// המתנות מפסיק לעבוד; החשבון בחנות נשאר. אחרי המחיקה — שאלות הפתיחה מחדש, על אותו חשבון.
+async function deleteMyList(){
+  if (!USER) return false;
+  if (saveT) { clearTimeout(saveT); saveT = null; }
+  LIST_DIRTY = false;                                   // שינוי שממתין לא יישמר מעל המחיקה
+  for (let i = 0; i < 50 && LIST_SAVING; i++) await new Promise(ok => setTimeout(ok, 100));   // שמירה שבדרך מסתיימת קודם
+  const res = await Identity.deleteList();
+  if (!(res && res.ok)) { toast('המחיקה נכשלה — לנסות שוב' + ((res && res.err) ? ' (' + res.err + ')' : '')); return false; }
+  S = EMPTY(); LIST_REV = null; LIST_DIRTY = false; LAST_LIST_ERR = ''; GIFT_LINK_TOKEN = null; GIFT_CLAIMS_CACHE = {}; GIFT_CLAIMS_AT = 0;
+  ls.del('bl_draft'); showSaveBar(false);
+  OB.step = 0; OB.due = null; OB.twins = false; OB.first = true;
+  renderOnboard(); toast('הרשימה נמחקה');
+  return true;
 }
 window.addEventListener('pagehide', saveOnLeave);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveOnLeave(); });
@@ -492,7 +539,10 @@ function mergeDraft(base, draft){
   const ids = new Set(out.custom.map(c => c.id)); d.custom.forEach(c => { if (!ids.has(c.id)) out.custom.push(c); });
   return out;
 }
-function weeksLeft(){ if (!S.profile?.due) return null; return Math.round((new Date(S.profile.due + 'T00:00:00') - TODAY) / (7 * 864e5)); }
+function daysLeft(){ if (!S.profile?.due) return null; const t0 = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()); return Math.round((new Date(S.profile.due + 'T00:00:00') - t0) / 864e5); }
+function weeksLeft(){ const d = daysLeft(); return d === null ? null : Math.round(d / 7); }
+// "עוד X שבועות" — ובשבוע האחרון, ימים: Math.round(3/7) היה 0 והכותרת אמרה "התאריך עבר" (48 §3.4/2)
+function leftText(){ const d = daysLeft(); if (d === null) return ''; if (d < 0) return 'התאריך המשוער עבר — בהצלחה!'; if (d === 0) return 'התאריך המשוער הוא היום — בהצלחה!'; if (d < 7) return `עוד ${d === 1 ? 'יום' : d + ' ימים'} · תאריך משוער ${dueText()}`; return `עוד ${weeksLeft()} שבועות · תאריך משוער ${dueText()}`; }
 const dueText = () => S.profile?.due ? new Date(S.profile.due + 'T00:00:00').toLocaleDateString('he-IL') : '';
 function defaultQty(it){ return (S.profile?.twins && TWINS_DOUBLE.has(it.id)) ? it.q * 2 : it.q; }
 
@@ -500,7 +550,9 @@ function defaultQty(it){ return (S.profile?.twins && TWINS_DOUBLE.has(it.id)) ? 
    מסכים מלאים
    ===================================================================== */
 const SCREENS = ['screen-loading','screen-error','screen-onboard','screen-build','screen-signin'];
-function showScreen(id){ SCREENS.forEach(s => $('#' + s).hidden = s !== id); $('#app').hidden = !!id; $('#tabs').hidden = !!id; $('#fabAdd').hidden = !!id || UI.view !== 'list'; window.scrollTo(0, Math.max(0, ROOT.getBoundingClientRect().top + window.scrollY - 12)); }
+function showScreen(id){ SCREENS.forEach(s => $('#' + s).hidden = s !== id); const g = $('#screen-gift'); if (g) g.hidden = true; $('#app').hidden = !!id; $('#tabs').hidden = !!id; $('#fabAdd').hidden = !!id || UI.view !== 'list'; scrollToTop(); }
+// גלילה לראש הכלי. ה-build מחליף את הגוף כך שבתמה זה ראש המקטע ולא ראש עמוד החנות (48 §3.4/6).
+function scrollToTop(){ window.scrollTo(0, Math.max(0, ROOT.getBoundingClientRect().top + window.scrollY - 12)); }
 
 /* ---------- 1. שאלות פתיחה ---------- */
 const OB = { step: 0, due: null, twins: false, first: true };
@@ -515,6 +567,8 @@ function waLinkFor(due){ const l = waGroups()[waKey(due)]; return (typeof l === 
 function waMonthName(due){ const [y, m] = waKey(due).split('-'); return MONTHS_HE[+m - 1] ? `${MONTHS_HE[+m - 1]} ${y}` : ''; }
 // שלבי השאלות. שלב הקבוצה קיים רק כשיש קבוצה לחודש שנבחר — ולכן המספר משתנה.
 const obSteps = () => ['hello', 'date', ...(waLinkFor(OB.due) ? ['wa'] : []), 'first'];
+// כמה ימים יש בחודש 'YYYY-MM' (בלי חודש נבחר: 31). "31 בפברואר" היה Invalid Date בספארי (48 §3.4/1).
+function daysInMonth(ym){ const [y, m] = String(ym || '').split('-').map(Number); return y && m ? new Date(y, m, 0).getDate() : 31; }
 const ART = {
   hello: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--peach-soft)"/><circle cx="80" cy="70" r="26" fill="var(--surface)"/><circle cx="70" cy="66" r="3" fill="var(--ink)"/><circle cx="90" cy="66" r="3" fill="var(--ink)"/><path d="M70 78q10 8 20 0" stroke="var(--peach-deep)" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 122q30-30 60 0" fill="var(--surface)"/><circle cx="118" cy="46" r="6" fill="var(--peach)"/><circle cx="40" cy="50" r="4" fill="var(--sage)"/><circle cx="128" cy="100" r="4" fill="var(--sky)"/></svg>`,
   date: `<svg class="art" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="70" fill="var(--sky-soft)"/><rect x="42" y="50" width="76" height="66" rx="12" fill="var(--surface)"/><rect x="42" y="50" width="76" height="20" rx="12" fill="var(--peach)"/><circle cx="60" cy="88" r="5" fill="var(--line)"/><circle cx="80" cy="88" r="5" fill="var(--line)"/><circle cx="100" cy="88" r="7" fill="var(--peach-deep)"/><circle cx="60" cy="104" r="5" fill="var(--line)"/><circle cx="80" cy="104" r="5" fill="var(--line)"/></svg>`,
@@ -535,7 +589,7 @@ function renderOnboard(){
   if (cur === 'hello') body = `${ART.hello}<h1>${T("ob0_title", "היי, ברוכים הבאים")}</h1><p class="lead">${T('ob0_lead', "בעוד רגע תהיה לכם רשימה מסודרת של כל מה שצריך ללידה — עם מחירים אמיתיים מ-{stores} חנויות, והכי זול מסומן.").replace('{stores}', Object.keys(STORES).length)}</p><p class="lead" style="font-size:15px">${T("ob0_sub", "שתי שאלות קצרות, ומתחילים.")}</p><div class="nav"><button class="btn primary big" id="obNext">${T("ob0_btn", "מתחילים")}</button></div>`;
   if (cur === 'date') body = `${ART.date}<h1>${T("ob1_title", "מתי התאריך המשוער?")}</h1><p class="lead">${T("ob1_lead", "לפי זה נפרוס את הקניות על החודשים שנשארו.")}</p>
     <div class="month-grid" id="obMonths">${months.map(m => `<button type="button" data-v="${m.v}" aria-pressed="${OB.due?.slice(0,7)===m.v}">${m.t}<br><small style="color:var(--muted);font-weight:400">${m.yy}</small></button>`).join('')}</div>
-    <div class="day-row"><label for="obDay" style="font-weight:600">יום</label><select id="obDay">${Array.from({length:31},(_, i) => `<option value="${i+1}" ${OB.due && +OB.due.slice(8)===i+1?'selected':''}>${i+1}</option>`).join('')}</select><span class="muted" style="font-size:14px">לא בטוח/ה? אפשר בערך</span></div>
+    <div class="day-row"><label for="obDay" style="font-weight:600">יום</label><select id="obDay">${Array.from({length: daysInMonth(OB.due ? OB.due.slice(0,7) : '')},(_, i) => `<option value="${i+1}" ${OB.due && +OB.due.slice(8)===i+1?'selected':''}>${i+1}</option>`).join('')}</select><span class="muted" style="font-size:14px">לא בטוח/ה? אפשר בערך</span></div>
     <div class="toggle"><span>תאומים או יותר?</span><button type="button" class="switch" id="obTwins" role="switch" aria-checked="${OB.twins}" aria-label="תאומים"></button></div>
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext" ${OB.due?'':'disabled'}>המשך</button></div>`;
   if (cur === 'wa') body = `${ART.group}<h1>יש קבוצה שמחכה לך</h1>
@@ -548,7 +602,7 @@ function renderOnboard(){
     <div class="nav"><button class="btn ghost" id="obBack" aria-label="חזרה">${ic('i-back')}</button><button class="btn primary big" id="obNext">${T("ob2_btn", "בונים את הרשימה")}</button></div><p class="tiny">אפשר לשנות הכול אחר כך.</p>`;
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span>${dots}</div><div class="step">${body}</div>`;
   $('#obBack', el)?.addEventListener('click', () => { OB.step--; renderOnboard(); });
-  $$('#obMonths button', el).forEach(b => b.onclick = () => { OB.due = b.dataset.v + '-' + String($('#obDay').value).padStart(2,'0'); renderOnboard(); });
+  $$('#obMonths button', el).forEach(b => b.onclick = () => { OB.due = b.dataset.v + '-' + String(Math.min(+$('#obDay').value || 1, daysInMonth(b.dataset.v))).padStart(2,'0'); renderOnboard(); });
   $('#obDay', el)?.addEventListener('change', e => { if (OB.due) OB.due = OB.due.slice(0,7) + '-' + String(e.target.value).padStart(2,'0'); });
   $('#obTwins', el)?.addEventListener('click', e => { OB.twins = !OB.twins; e.currentTarget.setAttribute('aria-checked', OB.twins); });
   $$('.opt', el).forEach(b => b.onclick = () => { OB.first = b.dataset.f === '1'; $$('.opt', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
@@ -570,9 +624,9 @@ function editProfile(){ const p = S.profile || {}; OB.step = 1; OB.due = p.due |
 /* ---------- 2. "הרשימה נבנית" ---------- */
 function renderBuild(){
   showScreen('screen-build');
-  const el = $('#screen-build'), w = weeksLeft();
+  const el = $('#screen-build'), w = weeksLeft(), dl = daysLeft();
   el.innerHTML = `<div class="top"><span class="brand">${T('brand', 'me &amp; mommy')}</span></div><div class="step">
-    <h1>${T("build_title", "בונים את הרשימה…")}</h1><p class="lead">${w != null && w > 0 ? `עוד ${w} שבועות ללידה. ` : ''}${ITEMS.length} פריטים, ${MODELS.length.toLocaleString('he-IL')} מוצרים עם מחיר, ${Object.keys(STORES).length} חנויות.</p>
+    <h1>${T("build_title", "בונים את הרשימה…")}</h1><p class="lead">${dl != null && dl > 0 ? (dl < 7 ? `עוד ${dl === 1 ? 'יום' : dl + ' ימים'} ללידה. ` : `עוד ${w} שבועות ללידה. `) : ''}${ITEMS.length} פריטים, ${MODELS.length.toLocaleString('he-IL')} מוצרים עם מחיר, ${Object.keys(STORES).length} חנויות.</p>
     <div class="progress"><i id="buildBar" style="width:0"></i></div><div class="build-list" id="buildList"></div>
     <div class="nav"><button class="btn primary big" id="buildNext" disabled>עוד רגע…</button></div></div>`;
   const list = $('#buildList'), bar = $('#buildBar'), btn = $('#buildNext');
@@ -621,7 +675,6 @@ function enterApp(){
   renderAll();
   renderRefer();
   if (IS_ADMIN) migrateAdminOverrides();
-  refreshGiftClaims().then(changed => { if (changed && UI.view === 'list') renderList(); });
   if (!S.tour) setTimeout(() => { if (!S.tour && $('#modalBg').hidden) openTour(); }, 400);   // פעם אחת לכל חשבון
 }
 
@@ -708,7 +761,7 @@ function renderTour(){
 }
 function closeTour(){ closeModal(); }
 function renderAll(){ renderList(); showView(UI.view); }
-function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') { renderBudget(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'budget') renderBudget(); }); } if (v === 'months') { renderMonths(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'months') renderMonths(); }); } if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(changed => { if (changed) renderGifts(); }); } if (v === 'list') refreshGiftClaims().then(changed => { if (changed) renderList(); }); window.scrollTo({top:0}); }
+function showView(v){ UI.view = v; $$('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v)); $$('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v)); $('#fabAdd').hidden = v !== 'list'; if (v === 'budget') { renderBudget(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'budget') renderBudget(); }); } if (v === 'months') { renderMonths(); refreshGiftClaims().then(changed => { if (changed && UI.view === 'months') renderMonths(); }); } if (v === 'gifts') { renderGifts(); refreshGiftClaims().then(changed => { if (changed) renderGifts(); }); } if (v === 'list') refreshGiftClaims().then(changed => { if (changed) renderList(); }); scrollToTop(); }
 $$('#tabs [role=tab]').forEach(b => b.onclick = () => showView(b.dataset.view));
 $('#fabAdd').onclick = () => openManual(null);
 
@@ -719,11 +772,11 @@ function lines(st = S){
     const it = itemById[iid]; if (!it || st.have[iid]) continue;
     for (const p of picks) {
       const m = modelById[p.m]; const o = m && m.offers.find(x => x.sid === p.s);
-      if (!m || !o) { out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:p.name || it.n, store:p.sname || '', price:0, qty:p.q || 1, who:p.who || 'me', missing:true, model:null}); continue; }
-      out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:m.n, brand:m.brand, store:STORES[o.sid].n, sid:o.sid, price:(p.pp != null ? +p.pp : o.p), storeP:o.p, personal:p.pp != null, px:o.px, qty:p.q || 1, who:p.who || 'me', model:m, offer:o, url:o.u, img:m.img});
+      if (!m || !o) { out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:p.name || it.n, store:p.sname || '', price:0, qty:p.q || 1, who:p.who || 'me', bought:!!p.b, missing:true, model:null}); continue; }
+      out.push({key:'p' + p.id, pick:p, itemId:+iid, item:it, cat:it.c, name:m.n, brand:m.brand, store:STORES[o.sid].n, sid:o.sid, price:(p.pp != null ? +p.pp : o.p), storeP:o.p, personal:p.pp != null, px:o.px, qty:p.q || 1, who:p.who || 'me', bought:!!p.b, model:m, offer:o, url:o.u, img:m.img});
     }
   }
-  for (const c of st.custom) { const it = c.i ? itemById[c.i] : null; if (it && st.have[it.id]) continue; out.push({key:'c' + c.id, custom:c, itemId:c.i || null, item:it, cat:it ? it.c : c.c, name:c.name, store:c.store || 'חנות אחרת', price:+c.price || 0, qty:c.q || 1, who:c.who || 'me', url:c.url, model:null}); }
+  for (const c of st.custom) { const it = c.i ? itemById[c.i] : null; if (it && st.have[it.id]) continue; out.push({key:'c' + c.id, custom:c, itemId:c.i || null, item:it, cat:it ? it.c : c.c, name:c.name, store:c.store || 'חנות אחרת', price:+c.price || 0, qty:c.q || 1, who:c.who || 'me', bought:!!c.b, url:c.url, model:null}); }
   return out;
 }
 const total = ls => ls.reduce((a, l) => a + l.price * l.qty, 0);
@@ -732,10 +785,13 @@ const mine = ls => ls.filter(l => l.who === 'me');
    • "אני קונה"      — הכל.
    • "לבקש במתנה"    — נשאר בתקציב עד שנותן/ת תופס/ת. כל יחידה שנתפסה יורדת בנפרד:
                         סומנו 2 עגלות ונתפסה אחת → אחת נשארת בתקציב. ביטול תפיסה מחזיר אותה מעצמו.
-   • "מגיע במתנה"    — לא נספר מלכתחילה (מישהו כבר קונה בוודאות).                            */
+   • "מגיע במתנה"    — לא נספר מלכתחילה (מישהו כבר קונה בוודאות).
+   • "קניתי ✓" (b)   — שלב 6, החלטת דניאל 29.9: נקנה, יורד מהתקציב ומלוח החודשים; נשאר ברשימה
+                        עם סימון; ביטול הסימון מחזיר אותו לתקציב. b = תאריך הקנייה.                 */
 const claimedOf = key => (GIFT_CLAIMS_CACHE[key] && GIFT_CLAIMS_CACHE[key].claimed) || 0;
 function buyQty(l){
   const q = l.qty || 1;
+  if (l.bought) return 0;
   if (l.who === 'given') return 0;
   if (l.who === 'gift') return Math.max(0, q - claimedOf(l.key));
   return q;
@@ -746,8 +802,7 @@ const handled = it => (S.sel[it.id]?.length) || S.have[it.id] || S.custom.some(c
 
 function renderHeader(){
   $('#helloTitle').textContent = 'הרשימה שלי';
-  const w = weeksLeft();
-  $('#helloSub').textContent = w === null ? '' : w > 0 ? `עוד ${w} שבועות · תאריך משוער ${dueText()}` : 'התאריך המשוער עבר — בהצלחה!';
+  $('#helloSub').textContent = leftText();
 }
 function renderHero(){
   const ls_ = lines(), gifts = ls_.filter(l => l.who === 'gift'), done = ITEMS.filter(handled).length, pct = Math.round(done / ITEMS.length * 100);
@@ -803,17 +858,21 @@ function whoRow(key, who){ return `<div class="who" role="group" aria-label="מ�
 function renderPick(it, p){
   const m = modelById[p.m], o = m && m.offers.find(x => x.sid === p.s), q = p.q || 1, key = 'p' + p.id;
   if (!m || !o) return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(p.name || 'המוצר שנבחר')}</b><span class="v">המוצר הזה כבר לא זמין בחנויות שאנחנו בודקים</span></span></div><div class="row"><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div></div>`;
-  const my = p.pp != null, unit = my ? +p.pp : o.p;
-  return `<div class="pick" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}${my ? ` · <b style="color:var(--sage)">המחיר שלי</b> · בחנות: ${nis(o.p)}` : ''}</span></span><span class="price num">${q > 1 ? nis(unit * q) : (my ? nis(unit) : priceLabel(o))}<button type="button" class="pedit" data-act="price" data-key="${key}" title="יש לי הנחה — לעדכן מחיר" aria-label="עריכת מחיר">✎</button></span></div>
-    <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a><button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
+  const my = p.pp != null, unit = my ? +p.pp : o.p, bought = !!p.b;
+  return `<div class="pick ${bought ? 'bought' : ''}" data-key="${key}">${thumb(m.img)}<div class="top"><span><b>${esc(m.n)}</b><span class="v">${m.brand ? esc(m.brand) + ' · ' : ''}${fmtChecked(STORES[o.sid].d)}${my ? ` · <b style="color:var(--sage)">המחיר שלי</b> · בחנות: ${nis(o.p)}` : ''}</span>${boughtTag(p)}</span><span class="price num">${q > 1 ? nis(unit * q) : (my ? nis(unit) : priceLabel(o))}<button type="button" class="pedit" data-act="price" data-key="${key}" title="יש לי הנחה — לעדכן מחיר" aria-label="עריכת מחיר">✎</button></span></div>
+    <div class="row">${storeChip(o.sid)}<span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${q > 1 ? `<span class="muted" style="font-size:13px">${my ? nis(unit) : priceLabel(o)} ליח׳</span>` : ''}<a href="${esc(o.u)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>${boughtBtn(key, bought)}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
     ${giftBadge(key, q, true)}${whoRow(key, p.who || 'me')}</div>`;
 }
 function renderCustomPick(c){
-  const key = 'c' + c.id, q = c.q || 1;
-  return `<div class="pick" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span></span><span class="price num">${nis((+c.price || 0) * q)}<button type="button" class="pedit" data-act="price" data-key="${key}" title="עריכת מחיר" aria-label="עריכת מחיר">✎</button></span></div>
-    <div class="row"><span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>` : ''}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
+  const key = 'c' + c.id, q = c.q || 1, bought = !!c.b;
+  return `<div class="pick ${bought ? 'bought' : ''}" data-key="${key}"><span class="thumb">${ic('i-bottle')}</span><div class="top"><span><b>${esc(c.name)}</b><span class="v">${esc(c.store || 'חנות אחרת')} · הוספה ידנית</span>${boughtTag(c)}</span><span class="price num">${nis((+c.price || 0) * q)}<button type="button" class="pedit" data-act="price" data-key="${key}" title="עריכת מחיר" aria-label="עריכת מחיר">✎</button></span></div>
+    <div class="row"><span class="qty" aria-label="כמות"><button type="button" data-act="qty" data-key="${key}" data-d="-1" aria-label="פחות">−</button><span class="num">${q}</span><button type="button" data-act="qty" data-key="${key}" data-d="1" aria-label="יותר">+</button></span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600">לחנות</a>` : ''}${boughtBtn(key, bought)}<button type="button" class="btn small ghost" data-act="remove" data-key="${key}" style="color:var(--rose)">הסרה</button></div>
     ${giftBadge(key, q, true)}${whoRow(key, c.who || 'me')}</div>`;
 }
+// "קניתי ✓" (שלב 6): התג בכותרת המוצר, והכפתור שמסמן/מבטל. b = תאריך הקנייה (YYYY-MM-DD).
+const todayISO = () => TODAY.getFullYear() + '-' + String(TODAY.getMonth() + 1).padStart(2, '0') + '-' + String(TODAY.getDate()).padStart(2, '0');
+function boughtTag(t){ return t.b ? `<span class="tagline"><span class="tag best">נקנה ✓${/^\d{4}-\d{2}-\d{2}$/.test(t.b) ? ' · ' + esc(fmtDate(t.b)) : ''}</span></span>` : ''; }
+function boughtBtn(key, bought){ return bought ? `<button type="button" class="btn small ghost" data-act="unbought" data-key="${key}" style="color:var(--peach-ink)">לבטל "קניתי"</button>` : `<button type="button" class="btn small soft" data-act="bought" data-key="${key}">קניתי ✓</button>`; }
 function renderItem(it){
   const picks = S.sel[it.id] || [], customs = S.custom.filter(c => c.i === it.id), have = !!S.have[it.id], models = modelsByItem[it.id] || [];
   const tags = `<span class="tag ${TAGS[it.t]}">${it.t}</span>` + (it.e ? `<span class="tag early">להזמין מוקדם</span>` : '');
@@ -850,6 +909,7 @@ function bindList(){
     else if (act === 'price') openPriceEdit(key, id);
     else if (act === 'remove') { const f = findByKey(key); if (f.custom) S.custom = S.custom.filter(c => c !== f.custom); else if (f.pick) { S.sel[f.iid] = f.picks.filter(p => p !== f.pick); if (!S.sel[f.iid].length) delete S.sel[f.iid]; } save(); id != null ? rerenderItem(id) : renderList(); toast('הוסר מהרשימה'); }
     else if (act === 'qty') { const f = findByKey(key), t = f.custom || f.pick; if (!t) return; t.q = Math.max(1, (t.q||1) + +b.dataset.d); save(); id != null ? rerenderItem(id) : renderList(); }
+    else if (act === 'bought' || act === 'unbought') { const f = findByKey(key), t = f.custom || f.pick; if (!t) return; if (act === 'bought') t.b = todayISO(); else delete t.b; save(); id != null ? rerenderItem(id) : renderList(); toast(act === 'bought' ? 'סומן: נקנה ✓ — ירד מהתקציב' : 'הסימון בוטל — חזר לתקציב'); }
   });
   $$('#cats [data-who]').forEach(b => b.onclick = () => {
     const f = findByKey(b.dataset.key), t = f.custom || f.pick; if (!t) return; t.who = b.dataset.who; save();
@@ -1326,6 +1386,18 @@ function statusGone(){
       <div class="st-s">${esc(itemById[x.i] ? itemById[x.i].n : 'פריט ' + x.i)}${x.b ? ' · ' + esc(brandName(x.b) || x.b) : ''}${x.lo != null ? ' · היה ' + esc(nis(x.lo)) : ''}</div>
     </div></div>`).join('');
 }
+// מוצרים שהמזהה שלהם זז (שלב 4, מסמך 53): bl_admin.json.moves = {ישן: {to, seen[, m]}}.
+// כאן רק כדי שדניאל יראה שהמנגנון עובד — התיקונים והרשימות עוברים לבד; אין מה להכריע.
+function statusMoves(){
+  const mv = (ADMIN_DOC && ADMIN_DOC.moves && typeof ADMIN_DOC.moves === 'object') ? ADMIN_DOC.moves : null;
+  if (!mv) return '';
+  const all = Object.entries(mv), renamed = all.filter(([, v]) => v && !v.m), merged = all.length - renamed.length;
+  if (!all.length) return `<div class="ttl" style="margin-top:18px">מוצרים שהחליפו מזהה</div><p style="font-size:13px;margin:4px 0 0">אין כרגע. ✓</p>`;
+  const recent = renamed.filter(([, v]) => v.seen && daysAgo(v.seen) <= 7).slice(0, 10);
+  return `<div class="ttl" style="margin-top:18px">מוצרים שהחליפו מזהה (${all.length})</div>
+    <p style="font-size:13px;margin:4px 0 ${recent.length ? 8 : 0}px">${renamed.length ? `${renamed.length} ${renamed.length === 1 ? 'מוצר החליף' : 'מוצרים החליפו'} מזהה בחנות (שינוי כותרת או פריט שנעלם)` : 'אין שינויי מזהה מהחנויות'}${merged ? ` · ${merged} מאיחודים שלך` : ''}. התיקונים שלך והרשימות השמורות עוברים למזהה החדש אוטומטית — אין מה לעשות.</p>`
+    + recent.map(([old, v]) => { const m = modelById[v.to]; return `<div class="st-row"><span class="st-dot">↪</span><div class="st-main"><div class="st-t">${esc(m ? m.n : v.to)}</div><div class="st-s">${esc(old)} ← ${esc(v.to)} · ${esc(fmtDate(v.seen))}${m ? '' : ' · לא בקובץ של היום'}</div></div></div>`; }).join('');
+}
 // Every answer he has given, with a way back. An answered row simply leaves the queue,
 // so without this a mis-tap would be invisible as well as permanent.
 function statusRuled(){
@@ -1360,6 +1432,7 @@ function renderStatus(){
     ${statusMerged()}
     ${statusDrops()}
     <div class="ttl" style="margin-top:18px">מוצרים שנעלמו מהחנויות</div>${statusGone()}
+    ${statusMoves()}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button type="button" class="btn soft" id="stClose">סגירה</button></div>
     <div class="admin-hint">${built ? `הנתונים כאן מהפרסום של ${esc(whenHe(built))}. ` : ''}הכרעה נשמרת מיד ונכנסת לקובץ של כולן בעדכון הלילי.</div>`);
   $('#stClose').onclick = closeModal;
@@ -1831,6 +1904,8 @@ function renderBudget(){
   const off = [];
   if (given.length) off.push(`${given.length} שמגיעים במתנה`);
   if (claimedUnits) off.push(`${claimedUnits} ${claimedUnits === 1 ? 'יחידה שכבר נתפסה' : 'יחידות שכבר נתפסו'} במתנה (${nis(claimedSum)})`);
+  const boughtLs = ls_.filter(l => l.bought);
+  if (boughtLs.length) off.push(`${boughtLs.length} ${boughtLs.length === 1 ? 'מוצר שכבר קניתם' : 'מוצרים שכבר קניתם'} (${nis(boughtLs.reduce((a, l) => a + l.price * (l.qty || 1), 0))})`);
   $('#view-budget').innerHTML = `<div class="card"><h3>כמה זה יוצא</h3><div class="bigline"><b class="num">${nis(sum)}</b><span class="muted">${buy.length} מוצרים לקנייה</span></div>
       ${saved > 0 ? `<div style="font-size:14.5px;color:var(--sage);font-weight:700;margin-top:6px">חיסכון של ${nis(saved)} לעומת קנייה בחנות היקרה ביותר</div>` : ''}
       ${giftOpen.length ? `<div class="why" style="margin-top:6px">כולל ${giftOpen.length} שביקשתם במתנה — נספרים עד שמישהו יתפוס אותם.</div>` : ''}
@@ -1918,18 +1993,30 @@ function renderMonths(){
 // הודעת הוואטסאפ: משפט אחד + הקישור. רשימת הטקסט הישנה בוטלה (החלטת דניאל, 20.9).
 const GIFT_WA_TEXT = link => `הכנו רשימת מתנות ללידה. אפשר לבחור מתנה ולסמן שאתם מביאים אותה, בלי הרשמה:\n${link}`;
 // מטמון קל של תפיסות המתנה (כמה יחידות כל שורה נתפסה) — מתעדכן ב-showView('gifts')
-let GIFT_CLAIMS_CACHE = {};
-async function refreshGiftClaims(){
-  if (!USER) return false;
-  try {
-    const r = await fetch(APP_PROXY_BASE + 'gift-claims', {credentials:'same-origin', cache:'no-store'});
-    const d = await r.json();
-    if (!d || !d.ok) return false;
-    const next = d.claims || {}, changed = JSON.stringify(next) !== JSON.stringify(GIFT_CLAIMS_CACHE);
-    GIFT_CLAIMS_CACHE = next;
-    return changed;
-  } catch(e) { return false; }
+let GIFT_CLAIMS_CACHE = {}, GIFT_CLAIMS_AT = 0, GIFT_CLAIMS_INFLIGHT = null;
+const GIFT_CLAIMS_TTL = 60 * 1000;   // מעבר לשונית לא מושך שוב תוך דקה; force = כן (48 §3.4/8)
+function refreshGiftClaims(force){
+  if (!USER) return Promise.resolve(false);
+  if (GIFT_CLAIMS_INFLIGHT) return GIFT_CLAIMS_INFLIGHT;
+  if (!force && Date.now() - GIFT_CLAIMS_AT < GIFT_CLAIMS_TTL) return Promise.resolve(false);
+  GIFT_CLAIMS_INFLIGHT = (async () => {
+    try {
+      const r = await fetch(APP_PROXY_BASE + 'gift-claims', {credentials:'same-origin', cache:'no-store'});
+      const d = await r.json();
+      if (!d || !d.ok) return false;
+      GIFT_CLAIMS_AT = Date.now();
+      const next = d.claims || {}, changed = JSON.stringify(next) !== JSON.stringify(GIFT_CLAIMS_CACHE);
+      GIFT_CLAIMS_CACHE = next;
+      return changed;
+    } catch(e) { return false; }
+    finally { GIFT_CLAIMS_INFLIGHT = null; }
+  })();
+  return GIFT_CLAIMS_INFLIGHT;
 }
+// חזרה לעמוד (מאפליקציה אחרת / טאב אחר) — התפיסות נמשכות טריות
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && USER && !$('#app').hidden) refreshGiftClaims(true).then(changed => { if (changed) rerenderView(); }); });
+// ציור מחדש של הלשונית הפתוחה בלבד — בלי גלילה ובלי משיכה נוספת
+function rerenderView(){ if (UI.view === 'list') renderList(); else if (UI.view === 'budget') renderBudget(); else if (UI.view === 'months') renderMonths(); else if (UI.view === 'gifts') renderGifts(); }
 // מי תפס את המתנה — השם מגיע מהתפיסה עצמה (הנותן/ת רשמו אותו; זה לא שדה חובה)
 function giverNames(c){
   return [...new Set(((c && c.entries) || []).map(e => String(e.giverName || '').trim()).filter(Boolean))];
@@ -1946,6 +2033,7 @@ function giftBadge(key, qty, asRow){
 }
 // תווית הסטטוס בסיכום ובחודשים: מה מבוקש כמתנה, ומה כבר מגיע במתנה (ולכן עלותו אפס)
 function giftLabel(l){
+  if (l.bought) return { t: 'נקנה ✓', cls: 'best' };
   if (l.who === 'given') return { t: 'מתקבל במתנה', cls: 'best' };
   if (l.who !== 'gift') return null;
   const q = l.qty || 1, c = Math.min(q, claimedOf(l.key));
@@ -1954,7 +2042,7 @@ function giftLabel(l){
                 : { t: 'מבוקש כמתנה', cls: 'gift', note: c > 0 ? `${c} מתוך ${q} כבר נתפסו` : '' };
 }
 function renderGifts(){
-  const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift'), given = ls_.filter(l => l.who === 'given');
+  const ls_ = lines(), gs = ls_.filter(l => l.who === 'gift' && !l.bought), given = ls_.filter(l => l.who === 'given');   // "קניתי" = כבר לא מבוקש במתנה, ולא יוצא לאורחים
   const row = g => `<div class="gift">${thumb(g.img)}<span class="t">${esc(g.name)}${giftBadge(g.key, g.qty, false)}</span><span class="p num">${nis(g.price * g.qty)}</span><span class="m">${esc(g.store)}${g.qty > 1 ? ` · ×${g.qty}` : ''}${g.item ? ` · ${esc(g.item.n)}` : ''}</span></div>`;
   $('#view-gifts').innerHTML = `<div class="card"><div class="bigline"><b class="num">${gs.length}</b><span class="muted">מתנות לבקש · שווי ${nis(total(gs))}</span></div>
       <div style="margin-top:14px"><a class="btn primary big" id="btnShareGifts" href="#" target="_blank" rel="noopener" ${gs.length?'':'aria-disabled="true"'}>שיתוף רשימת המתנות</a>
@@ -1977,12 +2065,17 @@ function renderGifts(){
   $('#btnGiftLink').onclick = () => openGiftLinkModal();
 }
 // ---- קישור לתפיסת מתנות: הטוקן נבנה בשרת (הווקר) — הדפדפן רק מציג/מעתיק ----
-async function fetchGiftLink(rotate){
+// שלב 6: קודם מרוקנים שמירה שממתינה (הווקר כותב את הרשימה כשהוא יוצר מלח — לא מעל שמירה בדרך),
+// ושולחים את הגרסה שלנו. conflict = מכשיר אחר שמר בינתיים: לוקחים את הגרסה שלו ומנסים פעם אחת שוב.
+async function fetchGiftLink(rotate, retry = true){
   try {
-    const r = await fetch(APP_PROXY_BASE + 'gift-link', {method: rotate ? 'POST' : 'GET', credentials:'same-origin', cache:'no-store'});
+    await flushSaveNow();
+    const r = await fetch(APP_PROXY_BASE + 'gift-link', {method:'POST', credentials:'same-origin', cache:'no-store', headers:{'content-type':'application/json'}, body: JSON.stringify({rotate: !!rotate, rev: LIST_REV})});
     const d = await r.json();
+    if (d && d.error === 'conflict' && retry) { applyServerList(d.list, d.updatedAt); return fetchGiftLink(rotate, false); }
     if (!d || !d.ok) return null;
     if (S.profile && d.salt) S.profile.giftSalt = d.salt; // מסונכרן — כך שהשמירה הבאה לא תדרוס את הסאלט החדש
+    if (d.updatedAt) LIST_REV = d.updatedAt;              // הכתיבה של המלח = גרסה חדשה בשרת
     return d.token;
   } catch(e) { return null; }
 }
@@ -2025,7 +2118,7 @@ const giftMineId = v => typeof v === 'string' ? v : ((v && v.id) || '');
 const giftMineTok = v => (v && typeof v === 'object' && v.tok) || '';
 function giftLocalSet(token, map){ ls.set(giftLocalKey(token), map); }
 async function bootGiftView(token){
-  showScreen('screen-loading');
+  if (!$('#screen-gift')) showScreen('screen-loading');   // רענון אחרי תפיסה: העמוד נשאר, בלי מסך טעינה מעליו
   let d;
   try {
     // e = מזהי התפיסות שלי — השרת מחזיר לכל שורה רק כמה נתפס ואם אחת התפיסות היא שלי (בלי שמות של אחרים)
@@ -2034,8 +2127,9 @@ async function bootGiftView(token){
     d = await r.json();
   } catch(e) { d = null; }
   if (!d || !d.ok) {
-    $('#errMsg').textContent = (d && d.error === 'revoked_or_missing') ? 'הקישור הזה כבר לא בתוקף — כדאי לבקש קישור מעודכן.' : 'לא הצלחנו לטעון את רשימת המתנות. אולי הקישור פגום.';
-    showScreen('screen-error');
+    if (d && d.error === 'revoked_or_missing') showLoadError('הקישור כבר לא בתוקף', 'הקישור הזה כבר לא בתוקף — כדאי לבקש קישור מעודכן.');
+    else if (d && (d.error === 'invalid_token' || d.error === 'not_found')) showLoadError('הקישור לא תקין', 'לא הצלחנו לטעון את רשימת המתנות. אולי הקישור פגום — כדאי לבקש אותו שוב.');
+    else showLoadError('לא הצלחנו לטעון את רשימת המתנות', 'כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב.');
     return;
   }
   renderGiftScreen(d.list, d.claims || {}, token);
@@ -2136,13 +2230,24 @@ async function giftUnclaim(lineKey, token){
 /* ---------- הגדרות ---------- */
 $('#btnSettings').onclick = () => {
   openModal(`<h2>הגדרות</h2><p>מחובר/ת לחשבון בחנות.</p>
-    <div style="display:grid;gap:8px">${waLinkFor(S.profile?.due) ? `<a class="btn soft" id="optWa" href="${esc(waLinkFor(S.profile.due))}" target="_blank" rel="noopener">קבוצת הוואטסאפ של משוערות ${esc(waMonthName(S.profile.due))}</a>` : ''}<button type="button" class="btn soft" id="optTour">הדרכה — איך עובדים עם הכלי</button><button type="button" class="btn soft" id="optProfile">שינוי תאריך / תאומים</button><button type="button" class="btn soft" id="optSignOut">יציאה מהחשבון</button><button type="button" class="btn ghost" id="optClose">סגירה</button></div>
+    <div style="display:grid;gap:8px">${waLinkFor(S.profile?.due) ? `<a class="btn soft" id="optWa" href="${esc(waLinkFor(S.profile.due))}" target="_blank" rel="noopener">קבוצת הוואטסאפ של משוערות ${esc(waMonthName(S.profile.due))}</a>` : ''}<button type="button" class="btn soft" id="optTour">הדרכה — איך עובדים עם הכלי</button><button type="button" class="btn soft" id="optProfile">שינוי תאריך / תאומים</button><button type="button" class="btn soft" id="optSignOut">יציאה מהחשבון</button><button type="button" class="btn ghost" id="optDelete" style="color:var(--rose)">מחיקת הרשימה שלי</button><button type="button" class="btn ghost" id="optClose">סגירה</button></div>
     <p class="why" style="text-align:center">גרסת נתונים ${VERSION.v} · ${MODELS.length.toLocaleString('he-IL')} מוצרים</p>`);
   $('#optTour').onclick = () => { closeModal(); openTour(); };
   $('#optProfile').onclick = () => { closeModal(); editProfile(); };
   $('#optSignOut').onclick = () => { closeModal(); Identity.signOut(); USER = null; S = EMPTY(); OB.step = 0; renderOnboard(); toast('יצאתם מהחשבון'); };
+  $('#optDelete').onclick = openDeleteList;
   $('#optClose').onclick = closeModal;
 };
+// שתי הקשות, כמו הסרת מוצר: הסבר מה נמחק ומה נשאר, ואז אישור מפורש.
+function openDeleteList(){
+  const n = lines().length;
+  openModal(`<h2>מחיקת הרשימה שלי</h2>
+    <p>יימחקו מהחשבון: הרשימה${n ? ` (${n} מוצרים)` : ''}, התאריך המשוער והמחירים האישיים, וכל תפיסות המתנה של החברים. קישור המתנות ששיתפתם יפסיק לעבוד.</p>
+    <p class="why">החשבון שלכם בחנות נשאר, ואפשר להתחיל רשימה חדשה מיד. אי אפשר לשחזר רשימה שנמחקה.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn soft" id="delCancel">ביטול</button><button type="button" class="btn primary" id="delGo" style="background:var(--rose);border-color:var(--rose)">כן, למחוק את הרשימה</button></div>`);
+  $('#delCancel').onclick = closeModal;
+  $('#delGo').onclick = async () => { const b = $('#delGo'); b.disabled = true; b.textContent = 'מוחקים…'; const ok = await deleteMyList(); if (ok) closeModal(); else { b.disabled = false; b.textContent = 'כן, למחוק את הרשימה'; } };
+}
 
 /* =====================================================================
    הפעלה
@@ -2168,7 +2273,7 @@ async function bootAccount(){
   LIST_LOADED = false;
   let saved = null;
   if (USER) {
-    try { saved = await Identity.loadList(); LIST_LOADED = true; }
+    try { const got = await Identity.loadList(); saved = got.list; LIST_REV = got.rev; LIST_LOADED = true; }
     catch (e) { showLoadError('לא הצלחנו לטעון את הרשימה שלך', 'הרשימה שמורה בחשבון — רק לא הצלחנו להביא אותה עכשיו. כדאי לבדוק שיש חיבור לאינטרנט ולנסות שוב. (' + e.message + ')'); return; }
   }
   if (draftBack) {

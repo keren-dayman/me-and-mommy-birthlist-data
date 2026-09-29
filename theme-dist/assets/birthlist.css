@@ -209,6 +209,8 @@
 #bl .tag.gift{background:var(--lilac-soft);color:var(--lilac)}
 #bl .item .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
 #bl .item .undo{font-size:14px;color:var(--muted);margin-top:6px}
+#bl .pick.bought{background:var(--sage-soft)}
+#bl .pick.bought .top b{color:var(--muted)}
 #bl .pick{margin-top:10px;background:var(--surface-2);border-radius:var(--r-sm);padding:12px;display:grid;grid-template-columns:auto 1fr;gap:10px 12px;align-items:start}
 #bl .pick .thumb{grid-row:span 1}
 #bl .pick .row,#bl .pick .who{grid-column:1 / -1}
