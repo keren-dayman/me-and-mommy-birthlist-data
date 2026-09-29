@@ -310,6 +310,12 @@
 #bl .month li small{color:var(--muted);display:block}
 #bl .month li .n{font-weight:700}
 #bl .month li.open{background:transparent;border:1.5px dashed var(--line)}
+#bl .month .mlines{grid-column:1 / -1;display:grid;gap:4px;margin-top:4px;padding-top:6px;border-top:1px solid var(--line)}
+#bl .month .mline{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+#bl .month .mline small{color:var(--muted)}
+#bl .month .mline .btn.small{padding:4px 10px;font-size:13px;white-space:nowrap}
+#bl .month .mline.done .mn{text-decoration:line-through;color:var(--muted)}
+#bl .month.done::before{background:var(--sage)}
 
 /* מתנות */
 #bl .gift{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;padding:12px;background:var(--surface);border-radius:var(--r-sm);margin-bottom:8px;align-items:center;box-shadow:var(--shadow)}
