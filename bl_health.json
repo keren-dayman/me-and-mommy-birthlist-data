@@ -2,6 +2,15 @@
  "schema": 1,
  "runs": [
   {
+   "at": "2026-10-16T11:27:55Z",
+   "ok": false,
+   "run": "38893891061",
+   "url": "https://github.com/keren-dayman/me-and-mommy-birthlist/actions/runs/38893891061",
+   "trigger": "schedule",
+   "step": "bundle-tests",
+   "error": "FAIL t_health_main_records_a_failed_mirror_and_writes_the_alerts_file -- [{'s': 'minene', 'age': 25, 'hideIn': 5}, {'s': 'shilav', 'age': 21, 'hideIn': 9}]"
+  },
+  {
    "at": "2026-10-16T08:08:10Z",
    "ok": false,
    "run": "38871616146",
@@ -893,5 +902,5 @@
    "built": "2026-09-18T14:19:23Z"
   }
  ],
- "updated": "2026-10-16T08:08:10Z"
+ "updated": "2026-10-16T11:27:55Z"
 }
