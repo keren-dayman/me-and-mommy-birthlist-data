@@ -2,6 +2,42 @@
  "schema": 1,
  "runs": [
   {
+   "at": "2026-11-10T11:09:32Z",
+   "ok": true,
+   "run": "42804812683",
+   "url": "https://github.com/keren-dayman/me-and-mommy-birthlist/actions/runs/42804812683",
+   "trigger": "schedule",
+   "counts": {
+    "models": 2981,
+    "offers": 3436,
+    "multiStore": 322,
+    "review": 4,
+    "manual": 8,
+    "fixes": 702
+   },
+   "stores": {
+    "shilav": 6459,
+    "babystar": 3126,
+    "motsesim": 3690,
+    "agalease": 3971,
+    "minene": 5084,
+    "superpharm": 1141
+   },
+   "built": "2026-11-10T11:09:24Z",
+   "warn": [
+    {
+     "s": "minene",
+     "age": 23,
+     "hideIn": 7
+    },
+    {
+     "s": "superpharm",
+     "age": 23,
+     "hideIn": 7
+    }
+   ]
+  },
+  {
    "at": "2026-11-09T11:29:29Z",
    "ok": true,
    "run": "42609100386",
@@ -1372,30 +1408,7 @@
     "superpharm": 1354
    },
    "built": "2026-09-19T10:12:19Z"
-  },
-  {
-   "at": "2026-09-19T09:06:13Z",
-   "ok": true,
-   "run": "35433660745",
-   "url": "https://github.com/keren-dayman/me-and-mommy-birthlist/actions/runs/35433660745",
-   "trigger": "workflow_dispatch",
-   "counts": {
-    "models": 3210,
-    "offers": 3672,
-    "multiStore": 328,
-    "review": 10,
-    "manual": 1
-   },
-   "stores": {
-    "shilav": 6723,
-    "babystar": 3006,
-    "motsesim": 3747,
-    "agalease": 4473,
-    "minene": 5019,
-    "superpharm": 1354
-   },
-   "built": "2026-09-19T09:06:11Z"
   }
  ],
- "updated": "2026-11-09T11:29:29Z"
+ "updated": "2026-11-10T11:09:32Z"
 }
